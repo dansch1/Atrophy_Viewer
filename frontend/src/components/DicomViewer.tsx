@@ -1,18 +1,23 @@
+import type { ViewerState } from "@/hooks/useViewerState";
 import * as dicomParser from "dicom-parser";
 import React, { useEffect, useRef, useState } from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
+import { toast } from "sonner";
 import { ZoomControls } from "./ZoomControls";
 
 interface DicomViewerProps {
-	enfaceFile: File;
+	fundusFile: File;
 	volumeFile: File;
-	showSlices: boolean;
+	viewerState: ViewerState;
 }
 
-const DicomViewer: React.FC<DicomViewerProps> = ({ enfaceFile, volumeFile, showSlices }) => {
-	const enfaceCanvasRef = useRef<HTMLCanvasElement>(null);
+const DicomViewer: React.FC<DicomViewerProps> = ({ fundusFile, volumeFile, viewerState }) => {
+	const { showSlices } = viewerState;
+
+	const fundusCanvasRef = useRef<HTMLCanvasElement>(null);
 	const sliceCanvasRef = useRef<HTMLCanvasElement>(null);
 
+	const [fundusData, setFundusData] = useState<DicomPixelData | null>(null);
 	const [volumeData, setVolumeData] = useState<DicomPixelData | null>(null);
 	const [selectedSlice, setSelectedSlice] = useState<number | null>(null);
 
@@ -25,21 +30,18 @@ const DicomViewer: React.FC<DicomViewerProps> = ({ enfaceFile, volumeFile, showS
 
 	useEffect(() => {
 		const loadData = async () => {
-			setVolumeData(null);
-			setSelectedSlice(null);
-
-			if (!enfaceFile || !volumeFile) return;
-
-			renderEnface(enfaceFile);
+			setFundusData(await getDicomPixelData(fundusFile));
 			setVolumeData(await getDicomPixelData(volumeFile));
+
+			setSelectedSlice(null);
 		};
 
 		loadData();
-	}, [enfaceFile, volumeFile]);
+	}, [fundusFile, volumeFile]);
 
 	useEffect(() => {
-		renderSelectedSlice();
-	}, [selectedSlice]);
+		renderFundus();
+	}, [fundusData]);
 
 	useEffect(() => {
 		if (!showSlices) {
@@ -47,34 +49,48 @@ const DicomViewer: React.FC<DicomViewerProps> = ({ enfaceFile, volumeFile, showS
 		}
 	}, [showSlices]);
 
+	useEffect(() => {
+		renderSelectedSlice();
+	}, [selectedSlice]);
+
 	const getDicomPixelData = async (file: File) => {
-		const arrayBuffer = await file.arrayBuffer();
-		const dataSet = dicomParser.parseDicom(new Uint8Array(arrayBuffer));
+		try {
+			const arrayBuffer = await file.arrayBuffer();
+			const dataSet = dicomParser.parseDicom(new Uint8Array(arrayBuffer));
 
-		const rows = dataSet.uint16("x00280010");
-		const cols = dataSet.uint16("x00280011");
-		const frames = Number(dataSet.intString("x00280008") ?? 1);
-		const bitsAllocated = dataSet.uint16("x00280100");
-		const pixelDataElement = dataSet.elements.x7fe00010;
+			const rows = dataSet.uint16("x00280010");
+			const cols = dataSet.uint16("x00280011");
+			const frames = Number(dataSet.intString("x00280008") ?? 1);
+			const bitsAllocated = dataSet.uint16("x00280100");
+			const pixelDataElement = dataSet.elements.x7fe00010;
 
-		if (!pixelDataElement || !rows || !cols) return null;
+			if (!pixelDataElement || !rows || !cols) return null;
 
-		const pixelData =
-			bitsAllocated === 16
-				? new Uint16Array(dataSet.byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length / 2)
-				: new Uint8Array(dataSet.byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
+			const pixelData =
+				bitsAllocated === 16
+					? new Uint16Array(
+							dataSet.byteArray.buffer,
+							pixelDataElement.dataOffset,
+							pixelDataElement.length / 2
+					  )
+					: new Uint8Array(dataSet.byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
 
-		return { rows, cols, frames, pixelData };
+			return { rows, cols, frames, pixelData };
+		} catch (err) {
+			console.error("DICOM parsing error:", err);
+			toast.error("Failed to read DICOM file", {
+				description: file?.name,
+			});
+
+			return null;
+		}
 	};
 
-	const renderEnface = async (file: File) => {
-		if (!enfaceCanvasRef.current) return;
+	const renderFundus = () => {
+		if (!fundusData || !fundusCanvasRef.current) return;
 
-		const data = await getDicomPixelData(file);
-		if (!data) return;
-
-		const { cols, rows, pixelData } = data;
-		renderImage(pixelData, cols, rows, enfaceCanvasRef.current);
+		const { cols, rows, pixelData } = fundusData;
+		renderImage(pixelData, cols, rows, fundusCanvasRef.current);
 	};
 
 	const renderSelectedSlice = () => {
@@ -125,9 +141,9 @@ const DicomViewer: React.FC<DicomViewerProps> = ({ enfaceFile, volumeFile, showS
 				<div className="absolute inset-0 flex items-center justify-center overflow-hidden">
 					<TransformComponent>
 						<div className="flex flex-row gap-5 items-center justify-center">
-							{enfaceFile && (
+							{fundusData && (
 								<div className="relative">
-									<canvas ref={enfaceCanvasRef} />
+									<canvas ref={fundusCanvasRef} />
 									{volumeData && showSlices && (
 										<svg className="absolute top-0 left-0 w-full h-full">
 											{Array.from({ length: volumeData.frames }).map((_, i) => {
@@ -162,7 +178,7 @@ const DicomViewer: React.FC<DicomViewerProps> = ({ enfaceFile, volumeFile, showS
 									)}
 								</div>
 							)}
-							{selectedSlice !== null && <canvas ref={sliceCanvasRef} />}
+							{volumeData && selectedSlice !== null && <canvas ref={sliceCanvasRef} />}
 						</div>
 					</TransformComponent>
 				</div>

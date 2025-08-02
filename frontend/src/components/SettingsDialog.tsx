@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { useDarkMode } from "@/lib/useDarkMode";
+import { useDarkMode } from "@/hooks/useDarkMode";
 import { Moon, Settings, Sun } from "lucide-react";
 import { useState } from "react";
 

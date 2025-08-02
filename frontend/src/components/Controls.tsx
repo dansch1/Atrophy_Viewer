@@ -1,22 +1,111 @@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import type { ViewerState } from "@/hooks/useViewerState";
 import { ChevronLeft, ChevronRight, Image, List, Pause, Play } from "lucide-react";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 interface ControlsProps {
 	files: File[];
-	selectedIndex: number;
-	setSelectedIndex: (index: number) => void;
-	showSlices: boolean;
-	setShowSlices: (value: boolean) => void;
+	viewerState: ViewerState;
 }
 
-const Controls: React.FC<ControlsProps> = ({ files, selectedIndex, setSelectedIndex, showSlices, setShowSlices }) => {
+const Controls: React.FC<ControlsProps> = ({ files, viewerState }) => {
+	const {
+		selectedIndex,
+		setSelectedIndex,
+		showSlices,
+		setShowSlices,
+		showAnnotations,
+		setShowAnnotations,
+		annotationCache,
+		setAnnotationCache,
+	} = viewerState;
+
 	const [isPlaying, setIsPlaying] = useState(false);
 	const [model, setModel] = useState("default");
-	const [showVisualization, setShowVisualization] = useState(false);
+	const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
 
+	useEffect(() => {
+		const updateAnnotations = async () => {
+			if (!showAnnotations) return;
+
+			if (!(await tryFetchAnnotations(selectedIndex))) {
+				setShowAnnotations(false);
+			}
+		};
+
+		updateAnnotations();
+	}, [selectedIndex]);
+
+	const handleAnnotations = async () => {
+		if (showAnnotations) {
+			setShowAnnotations(false);
+			return;
+		}
+
+		if (await tryFetchAnnotations(selectedIndex)) {
+			setShowAnnotations(true);
+		}
+	};
+
+	const tryFetchAnnotations = async (index: number) => {
+		if (annotationCache[index]) {
+			return true;
+		}
+
+		if (loadingIndex === index) {
+			return false;
+		}
+
+		const file = files[index];
+
+		if (!file) {
+			console.error("No file selected for annotation", { index, files });
+			toast.error("No file selected", {
+				description: "Please select a valid DICOM file before toggling annotation.",
+			});
+
+			return false;
+		}
+
+		setLoadingIndex(index);
+
+		try {
+			const formData = new FormData();
+			formData.append("file", file);
+			formData.append("model", model);
+
+			const response = await fetch(`${import.meta.env.VITE_API_BASE}/analyze`, {
+				method: "POST",
+				body: formData,
+			});
+
+			if (!response.ok) {
+				const text = await response.text();
+				throw new Error(`HTTP ${response.status}: ${text}`);
+			}
+
+			const data = await response.json();
+
+			setAnnotationCache((prev) => ({
+				...prev,
+				[index]: data,
+			}));
+		} catch (err) {
+			console.error("Annotation request failed", err);
+			toast.error("Annotation error", {
+				description: "Failed to annotate the file. Please try again.",
+			});
+
+			return false;
+		} finally {
+			setLoadingIndex(null);
+		}
+
+		return true;
+	};
 	return (
 		<footer className="relative grid grid-cols-3 items-center p-4 bg-accent">
 			<div className="justify-self-start text-sm truncate max-w-xs">
@@ -60,7 +149,7 @@ const Controls: React.FC<ControlsProps> = ({ files, selectedIndex, setSelectedIn
 										<SelectValue placeholder="Model" />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="default">Default</SelectItem>
+										<SelectItem value="default">Test</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>
@@ -83,7 +172,7 @@ const Controls: React.FC<ControlsProps> = ({ files, selectedIndex, setSelectedIn
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent>
-							<p>Show layers</p>
+							<p>Show slices</p>
 						</TooltipContent>
 					</Tooltip>
 				</TooltipProvider>
@@ -92,15 +181,20 @@ const Controls: React.FC<ControlsProps> = ({ files, selectedIndex, setSelectedIn
 					<Tooltip delayDuration={500}>
 						<TooltipTrigger asChild>
 							<Button
-								variant={showVisualization ? "default" : "outline"}
+								variant={showAnnotations ? "default" : "outline"}
 								size="icon"
-								onClick={() => setShowVisualization(!showVisualization)}
+								onClick={handleAnnotations}
+								disabled={
+									files.length <= selectedIndex ||
+									!files[selectedIndex] ||
+									loadingIndex === selectedIndex
+								}
 							>
 								<Image className="w-4 h-4" />
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent>
-							<p>Show visualization</p>
+							<p>Show annotations</p>
 						</TooltipContent>
 					</Tooltip>
 				</TooltipProvider>
