@@ -12,6 +12,13 @@ interface DicomViewerProps {
 }
 
 const DicomViewer: React.FC<DicomViewerProps> = ({ fundusFile, volumeFile, viewerState }) => {
+	type DicomPixelData = {
+		rows: number;
+		cols: number;
+		frames: number;
+		pixelData: Uint8Array | Uint16Array;
+	};
+
 	const { showSlices } = viewerState;
 
 	const fundusCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -20,13 +27,6 @@ const DicomViewer: React.FC<DicomViewerProps> = ({ fundusFile, volumeFile, viewe
 	const [fundusData, setFundusData] = useState<DicomPixelData | null>(null);
 	const [volumeData, setVolumeData] = useState<DicomPixelData | null>(null);
 	const [selectedSlice, setSelectedSlice] = useState<number | null>(null);
-
-	type DicomPixelData = {
-		rows: number;
-		cols: number;
-		frames: number;
-		pixelData: Uint8Array | Uint16Array;
-	};
 
 	useEffect(() => {
 		const loadData = async () => {
@@ -53,7 +53,7 @@ const DicomViewer: React.FC<DicomViewerProps> = ({ fundusFile, volumeFile, viewe
 		renderSelectedSlice();
 	}, [selectedSlice]);
 
-	const getDicomPixelData = async (file: File) => {
+	const getDicomPixelData = async (file: File): Promise<DicomPixelData | null> => {
 		try {
 			const arrayBuffer = await file.arrayBuffer();
 			const dataSet = dicomParser.parseDicom(new Uint8Array(arrayBuffer));

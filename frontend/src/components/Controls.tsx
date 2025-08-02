@@ -7,11 +7,11 @@ import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 interface ControlsProps {
-	files: File[];
+	volumeFiles: File[];
 	viewerState: ViewerState;
 }
 
-const Controls: React.FC<ControlsProps> = ({ files, viewerState }) => {
+const Controls: React.FC<ControlsProps> = ({ volumeFiles, viewerState }) => {
 	const {
 		selectedIndex,
 		setSelectedIndex,
@@ -59,12 +59,12 @@ const Controls: React.FC<ControlsProps> = ({ files, viewerState }) => {
 			return false;
 		}
 
-		const file = files[index];
+		const file = volumeFiles[index];
 
 		if (!file) {
-			console.error("No file selected for annotation", { index, files });
-			toast.error("No file selected", {
-				description: "Please select a valid DICOM file before toggling annotation.",
+			console.error("No volume file selected for annotation", { index, volumeFiles });
+			toast.error("No volume file selected", {
+				description: "Please select a valid DICOM volume file before toggling annotation.",
 			});
 
 			return false;
@@ -96,7 +96,7 @@ const Controls: React.FC<ControlsProps> = ({ files, viewerState }) => {
 		} catch (err) {
 			console.error("Annotation request failed", err);
 			toast.error("Annotation error", {
-				description: "Failed to annotate the file. Please try again.",
+				description: "Failed to annotate the volume file. Please try again.",
 			});
 
 			return false;
@@ -109,7 +109,7 @@ const Controls: React.FC<ControlsProps> = ({ files, viewerState }) => {
 	return (
 		<footer className="relative grid grid-cols-3 items-center p-4 bg-accent">
 			<div className="justify-self-start text-sm truncate max-w-xs">
-				{files.length > 0 ? files[selectedIndex]?.name || "Unnamed file" : "No files selected"}
+				{volumeFiles.length > 0 ? volumeFiles[selectedIndex]?.name || "Unnamed file" : "No files selected"}
 			</div>
 
 			<div className="justify-self-center flex gap-2">
@@ -125,15 +125,15 @@ const Controls: React.FC<ControlsProps> = ({ files, viewerState }) => {
 					onClick={() => setIsPlaying(!isPlaying)}
 					variant="default"
 					size="icon"
-					disabled={files.length < 2}
+					disabled={volumeFiles.length < 2}
 				>
 					{isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
 				</Button>
 				<Button
 					variant="outline"
 					size="icon"
-					onClick={() => setSelectedIndex(Math.min(files.length - 1, selectedIndex + 1))}
-					disabled={selectedIndex >= files.length - 1}
+					onClick={() => setSelectedIndex(Math.min(volumeFiles.length - 1, selectedIndex + 1))}
+					disabled={selectedIndex >= volumeFiles.length - 1}
 				>
 					<ChevronRight className="w-4 h-4" />
 				</Button>
@@ -185,8 +185,8 @@ const Controls: React.FC<ControlsProps> = ({ files, viewerState }) => {
 								size="icon"
 								onClick={handleAnnotations}
 								disabled={
-									files.length <= selectedIndex ||
-									!files[selectedIndex] ||
+									volumeFiles.length <= selectedIndex ||
+									!volumeFiles[selectedIndex] ||
 									loadingIndex === selectedIndex
 								}
 							>

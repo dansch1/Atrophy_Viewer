@@ -7,34 +7,67 @@ import Header from "./components/Header";
 import { useViewerState } from "./hooks/useViewerState";
 
 const App: React.FC = () => {
-	const [dicomFiles, setDicomFiles] = useState<DicomPair[]>([]);
-	const viewerState = useViewerState();
-
 	type DicomPair = {
 		volume: File;
 		fundus: File;
 	};
 
-	const currentPair = dicomFiles[viewerState.selectedIndex] || null;
+	type DicomMetadata = {
+		file: File;
+		frames: number;
+		studyInstanceUID: string;
+	};
 
-	const getDicomMetadata = async (file: File) => {
-		const arrayBuffer = await file.arrayBuffer();
-		const dataSet = dicomParser.parseDicom(new Uint8Array(arrayBuffer));
+	const [dicomFiles, setDicomFiles] = useState<DicomPair[]>([]);
+	const viewerState = useViewerState();
 
-		return {
-			file,
-			frames: Number(dataSet.intString("x00280008") || 1),
-			studyInstanceUID: dataSet.string("x0020000d"),
-		};
+	const { selectedIndex, setSelectedIndex, setAnnotationCache } = viewerState;
+
+	const currentPair = dicomFiles[selectedIndex] || null;
+
+	const getDicomMetadata = async (file: File): Promise<DicomMetadata | null> => {
+		try {
+			const arrayBuffer = await file.arrayBuffer();
+			const dataSet = dicomParser.parseDicom(new Uint8Array(arrayBuffer));
+
+			const frames = Number(dataSet.intString("x00280008") || 1);
+			const studyInstanceUID = dataSet.string("x0020000d");
+
+			if (!studyInstanceUID) return null;
+
+			return {
+				file,
+				frames,
+				studyInstanceUID,
+			};
+		} catch (err) {
+			console.error("Failed to read DICOM metadata", { file, err });
+
+			toast.error("Invalid DICOM file", {
+				description: `${file.name || "Unnamed file"} could not be parsed.`,
+			});
+
+			return null;
+		}
 	};
 
 	const handleUpload = async (files: FileList) => {
 		const fileArray = Array.from(files);
 		const parsed = await Promise.all(fileArray.map(getDicomMetadata));
 
+		const isValidDicom = (d: DicomMetadata | null): d is DicomMetadata => d !== null;
+		const valid = parsed.filter(isValidDicom);
+
+		if (valid.length === 0) {
+			toast.error("Parsing failed", {
+				description: "No valid DICOM files found.",
+			});
+			return;
+		}
+
 		// TODO
-		const volumeFiles = parsed.filter((d) => d && d.frames > 1);
-		const fundusFiles = parsed.filter((d) => d && d.frames === 1);
+		const volumeFiles = valid.filter((d) => d.frames > 1);
+		const fundusFiles = valid.filter((d) => d.frames === 1);
 
 		const matched: { volume: File; fundus: File }[] = [];
 
@@ -61,7 +94,9 @@ const App: React.FC = () => {
 		}
 
 		setDicomFiles(matched);
-		viewerState.setSelectedIndex(0);
+		setAnnotationCache({});
+
+		setSelectedIndex(0);
 	};
 
 	return (
@@ -82,7 +117,7 @@ const App: React.FC = () => {
 						</div>
 					)}
 				</main>
-				<Controls files={dicomFiles.map((p) => p.volume)} viewerState={viewerState} />
+				<Controls volumeFiles={dicomFiles.map((p) => p.volume)} viewerState={viewerState} />
 			</div>
 		</div>
 	);
