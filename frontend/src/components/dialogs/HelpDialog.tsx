@@ -20,7 +20,7 @@ export function HelpDialog() {
 					<CircleHelp className="w-5 h-5" />
 				</Button>
 			</DialogTrigger>
-			<DialogContent>
+			<DialogContent className="bg-secondary">
 				<DialogHeader>
 					<DialogTitle>Help</DialogTitle>
 					<DialogDescription>

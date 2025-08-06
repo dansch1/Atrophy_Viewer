@@ -1,67 +1,34 @@
-import * as dicomParser from "dicom-parser";
-import React, { useState } from "react";
-import { toast, Toaster } from "sonner";
+import React from "react";
+import { Toaster } from "sonner";
 import Controls from "./components/Controls";
-import DicomViewer from "./components/DicomViewer";
+import DicomViewer from "./components/dicomViewer";
+import { GlobalLoader } from "./components/GlobalLoader";
 import Header from "./components/Header";
-import { useViewerState } from "./hooks/useViewerState";
+import { useViewer } from "./context/ViewerStateProvider";
+import { showError, showSuccess } from "./lib/toast";
+import { getDicomMetadata, type DicomMetadata } from "./utils/dicom";
 
 const App: React.FC = () => {
-	type DicomPair = {
-		volume: File;
-		fundus: File;
-	};
-
-	type DicomMetadata = {
-		file: File;
-		frames: number;
-		studyInstanceUID: string;
-	};
-
-	const [dicomFiles, setDicomFiles] = useState<DicomPair[]>([]);
-	const viewerState = useViewerState();
-
-	const { selectedIndex, setSelectedIndex, setAnnotationCache } = viewerState;
-
-	const currentPair = dicomFiles[selectedIndex] || null;
-
-	const getDicomMetadata = async (file: File): Promise<DicomMetadata | null> => {
-		try {
-			const arrayBuffer = await file.arrayBuffer();
-			const dataSet = dicomParser.parseDicom(new Uint8Array(arrayBuffer));
-
-			const frames = Number(dataSet.intString("x00280008") || 1);
-			const studyInstanceUID = dataSet.string("x0020000d");
-
-			if (!studyInstanceUID) return null;
-
-			return {
-				file,
-				frames,
-				studyInstanceUID,
-			};
-		} catch (err) {
-			console.error("Failed to read DICOM metadata", { file, err });
-
-			toast.error("Invalid DICOM file", {
-				description: `${file.name || "Unnamed file"} could not be parsed.`,
-			});
-
-			return null;
-		}
-	};
+	const { dicomPairs, setDicomPairs, setSelectedPair, setAnnotations } = useViewer();
 
 	const handleUpload = async (files: FileList) => {
 		const fileArray = Array.from(files);
-		const parsed = await Promise.all(fileArray.map(getDicomMetadata));
 
-		const isValidDicom = (d: DicomMetadata | null): d is DicomMetadata => d !== null;
-		const valid = parsed.filter(isValidDicom);
+		const parsed: (DicomMetadata | null)[] = await Promise.all(
+			fileArray.map(async (file) => {
+				try {
+					return await getDicomMetadata(file);
+				} catch (err) {
+					console.error("Failed to read DICOM metadata", { file, err });
+					return null;
+				}
+			})
+		);
+
+		const valid = parsed.filter((d): d is DicomMetadata => d !== null);
 
 		if (valid.length === 0) {
-			toast.error("Parsing failed", {
-				description: "No valid DICOM files found.",
-			});
+			showError("Parsing failed", "No valid DICOM files found.");
 			return;
 		}
 
@@ -82,42 +49,38 @@ const App: React.FC = () => {
 		}
 
 		if (matched.length === 0) {
-			console.error("No matching fundus/volume pairs found", {
-				volumeFiles,
-				fundusFiles,
-			});
-			toast.error("No matching fundus/volume pairs found", {
-				description: "Each volume must have a corresponding fundus image with the same StudyInstanceUID.",
-			});
+			showError(
+				"No matching fundus/volume pairs found",
+				"Each volume must have a corresponding fundus image with the same StudyInstanceUID."
+			);
 
 			return;
 		}
 
-		setDicomFiles(matched);
-		setAnnotationCache({});
+		setDicomPairs(matched);
+		setAnnotations({});
+		setSelectedPair(0);
 
-		setSelectedIndex(0);
+		showSuccess("DICOM files loaded successfully", `${matched.length} pair(s) matched.`);
 	};
 
 	return (
 		<div>
+			<GlobalLoader />
 			<Toaster position="top-center" />
+
 			<div className="flex flex-col h-screen">
 				<Header onFileUpload={handleUpload} />
-				<main className="flex-1">
-					{currentPair ? (
-						<DicomViewer
-							fundusFile={currentPair.fundus}
-							volumeFile={currentPair.volume}
-							viewerState={viewerState}
-						/>
+				<main className="flex-1 overflow-hidden">
+					{dicomPairs.length > 0 ? (
+						<DicomViewer />
 					) : (
 						<div className="flex items-center justify-center h-full text-muted-foreground text-sm">
 							No DICOM files loaded. Please upload a fundus/volume pair.
 						</div>
 					)}
 				</main>
-				<Controls volumeFiles={dicomFiles.map((p) => p.volume)} viewerState={viewerState} />
+				<Controls />
 			</div>
 		</div>
 	);

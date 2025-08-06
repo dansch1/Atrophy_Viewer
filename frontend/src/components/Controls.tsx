@@ -1,43 +1,45 @@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import type { ViewerState } from "@/hooks/useViewerState";
+import { useViewer } from "@/context/ViewerStateProvider";
+import { showError, showSuccess } from "@/lib/toast";
+import { fetchAnnotations } from "@/services/annotation";
 import { ChevronLeft, ChevronRight, Image, List, Pause, Play } from "lucide-react";
 import React, { useEffect, useState } from "react";
-import { toast } from "sonner";
 
-interface ControlsProps {
-	volumeFiles: File[];
-	viewerState: ViewerState;
-}
-
-const Controls: React.FC<ControlsProps> = ({ volumeFiles, viewerState }) => {
+const Controls: React.FC = () => {
 	const {
-		selectedIndex,
-		setSelectedIndex,
+		dicomPairs,
+		selectedPair,
+		setSelectedPair,
 		showSlices,
 		setShowSlices,
+		annotations,
+		setAnnotations,
+		loadingAnnotations,
+		setLoadingAnnotations,
 		showAnnotations,
 		setShowAnnotations,
-		annotationCache,
-		setAnnotationCache,
-	} = viewerState;
+		models,
+		selectedModel,
+		setSelectedModel,
+	} = useViewer();
 
 	const [isPlaying, setIsPlaying] = useState(false);
-	const [model, setModel] = useState("default");
-	const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
 
 	useEffect(() => {
 		const updateAnnotations = async () => {
-			if (!showAnnotations) return;
+			if (!showAnnotations) {
+				return;
+			}
 
-			if (!(await tryFetchAnnotations(selectedIndex))) {
+			if (!(await tryFetchAnnotations(selectedPair))) {
 				setShowAnnotations(false);
 			}
 		};
 
 		updateAnnotations();
-	}, [selectedIndex]);
+	}, [selectedPair]);
 
 	const handleAnnotations = async () => {
 		if (showAnnotations) {
@@ -45,79 +47,68 @@ const Controls: React.FC<ControlsProps> = ({ volumeFiles, viewerState }) => {
 			return;
 		}
 
-		if (await tryFetchAnnotations(selectedIndex)) {
+		if (await tryFetchAnnotations(selectedPair)) {
 			setShowAnnotations(true);
 		}
 	};
 
 	const tryFetchAnnotations = async (index: number) => {
-		if (annotationCache[index]) {
+		if (annotations[index]) {
 			return true;
 		}
 
-		if (loadingIndex === index) {
+		if (loadingAnnotations.has(index)) {
 			return false;
 		}
 
-		const file = volumeFiles[index];
+		const file = dicomPairs[index]?.volume;
 
 		if (!file) {
-			console.error("No volume file selected for annotation", { index, volumeFiles });
-			toast.error("No volume file selected", {
-				description: "Please select a valid DICOM volume file before toggling annotation.",
-			});
-
+			showError("No volume file selected", "Please select a valid DICOM volume file before toggling annotation.");
 			return false;
 		}
 
-		setLoadingIndex(index);
+		if (!selectedModel) {
+			showError("No model selected", "Please select a model before toggling annotation.");
+			return false;
+		}
+
+		setLoadingAnnotations((prev) => new Set(prev).add(index));
 
 		try {
-			const formData = new FormData();
-			formData.append("file", file);
-			formData.append("model", model);
+			const data = await fetchAnnotations(file, selectedModel);
 
-			const response = await fetch(`${import.meta.env.VITE_API_BASE}/analyze`, {
-				method: "POST",
-				body: formData,
-			});
-
-			if (!response.ok) {
-				const text = await response.text();
-				throw new Error(`HTTP ${response.status}: ${text}`);
-			}
-
-			const data = await response.json();
-
-			setAnnotationCache((prev) => ({
+			setAnnotations((prev) => ({
 				...prev,
 				[index]: data,
 			}));
 		} catch (err) {
-			console.error("Annotation request failed", err);
-			toast.error("Annotation error", {
-				description: "Failed to annotate the volume file. Please try again.",
-			});
-
+			console.error("Annotation request failed", { file, err });
+			showError("Annotation error", "Failed to annotate the volume file. Please try again.");
 			return false;
 		} finally {
-			setLoadingIndex(null);
+			setLoadingAnnotations((prev) => {
+				const next = new Set(prev);
+				next.delete(index);
+				return next;
+			});
 		}
 
+		showSuccess("Annotation added", `Annotations loaded for file: ${file.name}`);
 		return true;
 	};
 	return (
 		<footer className="relative grid grid-cols-3 items-center p-4 bg-accent">
-			<div className="justify-self-start text-sm truncate max-w-xs">
-				{volumeFiles.length > 0 ? volumeFiles[selectedIndex]?.name || "Unnamed file" : "No files selected"}
+			<div className="justify-self-start text-sm">
+				{dicomPairs.length > 0 ? `File: ${selectedPair + 1} / ${dicomPairs.length}` : "No files selected"}
 			</div>
 
 			<div className="justify-self-center flex gap-2">
 				<Button
 					variant="outline"
 					size="icon"
-					onClick={() => setSelectedIndex(Math.max(0, selectedIndex - 1))}
-					disabled={selectedIndex <= 0}
+					onClick={() => setSelectedPair(Math.max(0, selectedPair - 1))}
+					disabled={selectedPair <= 0}
 				>
 					<ChevronLeft className="w-4 h-4" />
 				</Button>
@@ -125,40 +116,45 @@ const Controls: React.FC<ControlsProps> = ({ volumeFiles, viewerState }) => {
 					onClick={() => setIsPlaying(!isPlaying)}
 					variant="default"
 					size="icon"
-					disabled={volumeFiles.length < 2}
+					disabled={dicomPairs.length < 2}
 				>
 					{isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
 				</Button>
 				<Button
 					variant="outline"
 					size="icon"
-					onClick={() => setSelectedIndex(Math.min(volumeFiles.length - 1, selectedIndex + 1))}
-					disabled={selectedIndex >= volumeFiles.length - 1}
+					onClick={() => setSelectedPair(Math.min(dicomPairs.length - 1, selectedPair + 1))}
+					disabled={selectedPair >= dicomPairs.length - 1}
 				>
 					<ChevronRight className="w-4 h-4" />
 				</Button>
 			</div>
 
 			<div className="justify-self-end flex gap-2">
-				<TooltipProvider>
-					<Tooltip delayDuration={500}>
-						<TooltipTrigger asChild>
-							<div>
-								<Select value={model} onValueChange={setModel}>
-									<SelectTrigger className="w-50 bg-background">
-										<SelectValue placeholder="Model" />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="default">Test</SelectItem>
-									</SelectContent>
-								</Select>
-							</div>
-						</TooltipTrigger>
-						<TooltipContent>
-							<p>Select model</p>
-						</TooltipContent>
-					</Tooltip>
-				</TooltipProvider>
+				<div>
+					<Select value={selectedModel ?? ""} onValueChange={setSelectedModel}>
+						<SelectTrigger className="w-50 bg-background">
+							<SelectValue placeholder="Select model" />
+						</SelectTrigger>
+						<SelectContent>
+							{models.length === 0 ? (
+								<SelectItem value="default" disabled>
+									No models available
+								</SelectItem>
+							) : (
+								models.map((model) => {
+									const name = model.name.replace(/\.[^/.]+$/, "");
+
+									return (
+										<SelectItem key={model.name} value={model.name}>
+											{name}
+										</SelectItem>
+									);
+								})
+							)}
+						</SelectContent>
+					</Select>
+				</div>
 
 				<TooltipProvider>
 					<Tooltip delayDuration={500}>
@@ -167,6 +163,7 @@ const Controls: React.FC<ControlsProps> = ({ volumeFiles, viewerState }) => {
 								variant={showSlices ? "default" : "outline"}
 								size="icon"
 								onClick={() => setShowSlices(!showSlices)}
+								disabled={!dicomPairs[selectedPair]?.fundus}
 							>
 								<List className="w-4 h-4" />
 							</Button>
@@ -185,9 +182,7 @@ const Controls: React.FC<ControlsProps> = ({ volumeFiles, viewerState }) => {
 								size="icon"
 								onClick={handleAnnotations}
 								disabled={
-									volumeFiles.length <= selectedIndex ||
-									!volumeFiles[selectedIndex] ||
-									loadingIndex === selectedIndex
+									!dicomPairs[selectedPair] || !selectedModel || loadingAnnotations.has(selectedPair)
 								}
 							>
 								<Image className="w-4 h-4" />

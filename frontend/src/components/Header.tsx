@@ -1,8 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { Download, UploadCloud } from "lucide-react";
 import React, { useRef, useState, type DragEvent } from "react";
-import { HelpDialog } from "./HelpDialog";
-import { SettingsDialog } from "./SettingsDialog";
+
+import { HelpDialog } from "./dialogs/HelpDialog";
+import { SettingsDialog } from "./dialogs/SettingsDialog";
 
 interface HeaderProps {
 	onFileUpload: (files: FileList) => void;

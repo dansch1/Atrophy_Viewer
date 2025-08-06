@@ -1,27 +1,35 @@
-import { useEffect, useState } from "react";
+import { usePersistentState } from "@/hooks/usePersistentState";
+import { useEffect } from "react";
 
 export function useDarkMode() {
-	const [isDark, setIsDark] = useState(() => {
-		// load from localStorage or system preference
-		if (typeof window !== "undefined") {
-			return (
-				localStorage.getItem("theme") === "dark" ||
-				(!localStorage.getItem("theme") && window.matchMedia("(prefers-color-scheme: dark)").matches)
-			);
-		}
+	const [isDark, setIsDark] = usePersistentState<boolean>(
+		"theme",
+		(() => {
+			if (typeof window === "undefined") {
+				return false;
+			}
 
-		return false;
-	});
+			const stored = localStorage.getItem("theme");
+
+			if (stored === "dark") {
+				return true;
+			}
+
+			if (stored === "light") {
+				return false;
+			}
+
+			return window.matchMedia("(prefers-color-scheme: dark)").matches;
+		})()
+	);
 
 	useEffect(() => {
 		const root = document.documentElement;
 
 		if (isDark) {
 			root.classList.add("dark");
-			localStorage.setItem("theme", "dark");
 		} else {
 			root.classList.remove("dark");
-			localStorage.setItem("theme", "light");
 		}
 	}, [isDark]);
 
