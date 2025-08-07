@@ -10,8 +10,9 @@ import React, { useEffect, useState } from "react";
 const Controls: React.FC = () => {
 	const {
 		dicomPairs,
-		selectedPair,
-		setSelectedPair,
+		selectedIndex,
+		setSelectedIndex,
+		selectedFundus,
 		showSlices,
 		setShowSlices,
 		annotations,
@@ -33,13 +34,13 @@ const Controls: React.FC = () => {
 				return;
 			}
 
-			if (!(await tryFetchAnnotations(selectedPair))) {
+			if (!(await tryFetchAnnotations(selectedIndex))) {
 				setShowAnnotations(false);
 			}
 		};
 
 		updateAnnotations();
-	}, [selectedPair]);
+	}, [selectedIndex]);
 
 	const handleAnnotations = async () => {
 		if (showAnnotations) {
@@ -47,7 +48,7 @@ const Controls: React.FC = () => {
 			return;
 		}
 
-		if (await tryFetchAnnotations(selectedPair)) {
+		if (await tryFetchAnnotations(selectedIndex)) {
 			setShowAnnotations(true);
 		}
 	};
@@ -61,7 +62,7 @@ const Controls: React.FC = () => {
 			return false;
 		}
 
-		const file = dicomPairs[index]?.volume;
+		const file = dicomPairs[index]?.volume.file;
 
 		if (!file) {
 			showError("No volume file selected", "Please select a valid DICOM volume file before toggling annotation.");
@@ -97,18 +98,19 @@ const Controls: React.FC = () => {
 		showSuccess("Annotation added", `Annotations loaded for file: ${file.name}`);
 		return true;
 	};
+
 	return (
 		<footer className="relative grid grid-cols-3 items-center p-4 bg-accent">
 			<div className="justify-self-start text-sm">
-				{dicomPairs.length > 0 ? `File: ${selectedPair + 1} / ${dicomPairs.length}` : "No files selected"}
+				{dicomPairs.length > 0 ? `File: ${selectedIndex + 1} / ${dicomPairs.length}` : "No files selected"}
 			</div>
 
 			<div className="justify-self-center flex gap-2">
 				<Button
 					variant="outline"
 					size="icon"
-					onClick={() => setSelectedPair(Math.max(0, selectedPair - 1))}
-					disabled={selectedPair <= 0}
+					onClick={() => setSelectedIndex(Math.max(0, selectedIndex - 1))}
+					disabled={selectedIndex <= 0}
 				>
 					<ChevronLeft className="w-4 h-4" />
 				</Button>
@@ -123,8 +125,8 @@ const Controls: React.FC = () => {
 				<Button
 					variant="outline"
 					size="icon"
-					onClick={() => setSelectedPair(Math.min(dicomPairs.length - 1, selectedPair + 1))}
-					disabled={selectedPair >= dicomPairs.length - 1}
+					onClick={() => setSelectedIndex(Math.min(dicomPairs.length - 1, selectedIndex + 1))}
+					disabled={selectedIndex >= dicomPairs.length - 1}
 				>
 					<ChevronRight className="w-4 h-4" />
 				</Button>
@@ -163,7 +165,7 @@ const Controls: React.FC = () => {
 								variant={showSlices ? "default" : "outline"}
 								size="icon"
 								onClick={() => setShowSlices(!showSlices)}
-								disabled={!dicomPairs[selectedPair]?.fundus}
+								disabled={!selectedFundus}
 							>
 								<List className="w-4 h-4" />
 							</Button>
@@ -182,7 +184,9 @@ const Controls: React.FC = () => {
 								size="icon"
 								onClick={handleAnnotations}
 								disabled={
-									!dicomPairs[selectedPair] || !selectedModel || loadingAnnotations.has(selectedPair)
+									!dicomPairs[selectedIndex] ||
+									!selectedModel ||
+									loadingAnnotations.has(selectedIndex)
 								}
 							>
 								<Image className="w-4 h-4" />

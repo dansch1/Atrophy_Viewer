@@ -1,3 +1,5 @@
+export const DEFAULT_LABEL_COLOR: string = "#000000";
+
 export class LabelColors {
 	private labels: string[];
 	private colors: string[];
@@ -18,31 +20,31 @@ export class LabelColors {
 			.padStart(6, "0")}`;
 	}
 
-	getColorByLabel(label: string): string | undefined {
+	getColorByIndex(index: number): string {
+		return this.colors[index] ?? DEFAULT_LABEL_COLOR;
+	}
+
+	getColorByLabel(label: string): string {
 		const index = this.labels.indexOf(label);
 
 		if (index === -1) {
-			return undefined;
+			return DEFAULT_LABEL_COLOR;
 		}
 
-		return this.getColorByIndex(index);
-	}
-
-	getColorByIndex(index: number): string | undefined {
 		return this.colors[index];
 	}
 
-	setColorByLabel(label: string, color?: string): void {
-		const index = this.labels.indexOf(label);
-
-		if (index !== -1) {
-			this.setColorByIndex(index, color);
+	setColorByIndex(index: number, color: string = this.getRandomColor()): void {
+		if (index >= 0 && index < this.colors.length) {
+			this.colors[index] = color;
 		}
 	}
 
-	setColorByIndex(index: number, color?: string): void {
-		if (index >= 0 && index < this.colors.length) {
-			this.colors[index] = color ?? this.getRandomColor();
+	setColorByLabel(label: string, color: string = this.getRandomColor()): void {
+		const index = this.labels.indexOf(label);
+
+		if (index !== -1) {
+			this.colors[index] = color;
 		}
 	}
 

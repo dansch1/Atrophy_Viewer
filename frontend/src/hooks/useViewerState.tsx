@@ -1,14 +1,15 @@
 import { usePersistentState } from "@/hooks/usePersistentState";
 import { LabelColors } from "@/lib/labelColors";
 import { showError } from "@/lib/toast";
-import type { VolumeAnnotations } from "@/services/annotation";
+import type { SliceAnnotations, VolumeAnnotations } from "@/services/annotation";
 import { fetchModels, type ModelData } from "@/services/model";
+import type { DicomMetadata } from "@/utils/dicom";
 import { useEffect, useState } from "react";
 import { usePersistentModelColors } from "./usePersistentModelColors";
 
 export type DicomPair = {
-	volume: File;
-	fundus: File;
+	volume: DicomMetadata;
+	fundus: DicomMetadata;
 };
 
 export type ModelColors = {
@@ -18,8 +19,10 @@ export type ModelColors = {
 export type ViewerState = {
 	dicomPairs: DicomPair[];
 	setDicomPairs: (files: DicomPair[]) => void;
-	selectedPair: number;
-	setSelectedPair: (index: number) => void;
+	selectedIndex: number;
+	setSelectedIndex: (index: number) => void;
+	selectedVolume: DicomMetadata | undefined;
+	selectedFundus: DicomMetadata | undefined;
 	selectedSlice: number | null;
 	setSelectedSlice: (index: number | null) => void;
 	showSlices: boolean;
@@ -28,6 +31,8 @@ export type ViewerState = {
 	setAnnotations: React.Dispatch<React.SetStateAction<Record<number, VolumeAnnotations>>>;
 	loadingAnnotations: Set<number>;
 	setLoadingAnnotations: React.Dispatch<React.SetStateAction<Set<number>>>;
+	selectedVolumeAnnotations: VolumeAnnotations | undefined;
+	selectedSliceAnnotations: SliceAnnotations | undefined;
 	showAnnotations: boolean;
 	setShowAnnotations: (value: boolean) => void;
 	showFilenames: boolean;
@@ -40,17 +45,22 @@ export type ViewerState = {
 	setSelectedModel: (model: string) => void;
 	modelColors: ModelColors;
 	setModelColors: React.Dispatch<React.SetStateAction<ModelColors>>;
+	selectedLabelColors: LabelColors | undefined;
 };
 
 export function useViewerState(): ViewerState {
 	const [dicomPairs, setDicomPairs] = useState<DicomPair[]>([]);
-	const [selectedPair, setSelectedPair] = useState(0);
+	const [selectedIndex, setSelectedIndex] = useState(0);
+	const selectedVolume = dicomPairs[selectedIndex]?.volume;
+	const selectedFundus = dicomPairs[selectedIndex]?.fundus;
 
 	const [selectedSlice, setSelectedSlice] = useState<number | null>(null);
 	const [showSlices, setShowSlices] = useState(false);
 
-	const [annotations, setAnnotations] = useState<Record<number, any>>({});
+	const [annotations, setAnnotations] = useState<Record<number, VolumeAnnotations>>({});
 	const [loadingAnnotations, setLoadingAnnotations] = useState<Set<number>>(new Set());
+	const selectedVolumeAnnotations = annotations[selectedIndex];
+	const selectedSliceAnnotations = selectedSlice !== null ? selectedVolumeAnnotations?.[selectedSlice] : undefined;
 	const [showAnnotations, setShowAnnotations] = useState(false);
 
 	const [showFilenames, setShowFilenames] = usePersistentState("viewer:showFilenames", true);
@@ -59,6 +69,7 @@ export function useViewerState(): ViewerState {
 	const [loadingModels, setLoadingModels] = useState(false);
 	const [selectedModel, setSelectedModel] = useState<string | null>(null);
 	const [modelColors, setModelColors] = usePersistentModelColors("viewer:modelColors");
+	const selectedLabelColors = selectedModel !== null ? modelColors[selectedModel] : undefined;
 
 	useEffect(() => {
 		const loadModels = async () => {
@@ -100,8 +111,10 @@ export function useViewerState(): ViewerState {
 	return {
 		dicomPairs,
 		setDicomPairs,
-		selectedPair,
-		setSelectedPair,
+		selectedIndex,
+		setSelectedIndex,
+		selectedVolume,
+		selectedFundus,
 		selectedSlice,
 		setSelectedSlice,
 		showSlices,
@@ -110,6 +123,8 @@ export function useViewerState(): ViewerState {
 		setAnnotations,
 		loadingAnnotations,
 		setLoadingAnnotations,
+		selectedVolumeAnnotations,
+		selectedSliceAnnotations,
 		showAnnotations,
 		setShowAnnotations,
 		showFilenames,
@@ -122,5 +137,6 @@ export function useViewerState(): ViewerState {
 		setSelectedModel,
 		modelColors,
 		setModelColors,
+		selectedLabelColors,
 	};
 }

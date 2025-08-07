@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 
 export function GlobalLoader() {
 	const { loadingModels, loadingAnnotations } = useViewer();
+
 	const isLoading = loadingModels || loadingAnnotations.size > 0;
 
 	if (!isLoading) {

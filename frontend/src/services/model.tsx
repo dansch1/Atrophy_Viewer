@@ -6,7 +6,7 @@ export const ModelDataSchema = z.object({
 	classes: z.array(z.string()),
 });
 
-export const ModelResponseSchema = z.array(ModelDataSchema);
+export const ModelListSchema = z.array(ModelDataSchema);
 
 export type ModelData = z.infer<typeof ModelDataSchema>;
 
@@ -20,5 +20,5 @@ export async function fetchModels(): Promise<ModelData[]> {
 
 	const data = await response.json();
 
-	return ModelResponseSchema.parse(data);
+	return ModelListSchema.parse(data);
 }

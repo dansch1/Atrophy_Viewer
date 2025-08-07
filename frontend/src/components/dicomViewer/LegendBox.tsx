@@ -1,7 +1,7 @@
 import { useViewer } from "@/context/ViewerStateProvider";
 
 export const LegendBox = () => {
-	const { selectedModel, models, showAnnotations, modelColors } = useViewer();
+	const { selectedModel, models, showAnnotations, selectedLabelColors } = useViewer();
 
 	if (!selectedModel || !showAnnotations) {
 		return null;
@@ -20,7 +20,7 @@ export const LegendBox = () => {
 				<div key={cls} className="flex items-center gap-2">
 					<div
 						className="w-4 h-4 rounded border"
-						style={{ backgroundColor: modelColors[selectedModel]?.getColorByLabel(cls) ?? "#000000" }}
+						style={{ backgroundColor: selectedLabelColors?.getColorByLabel(cls) }}
 					/>
 					<span className="text-muted-foreground">{cls}</span>
 				</div>

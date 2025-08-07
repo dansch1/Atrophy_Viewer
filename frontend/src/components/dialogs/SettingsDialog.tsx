@@ -31,7 +31,6 @@ export function SettingsDialog() {
 		setModelColors((prev) => {
 			const updated = { ...prev };
 			updated[model]?.setColorByLabel(cls, color);
-
 			return updated;
 		});
 	};
@@ -85,7 +84,7 @@ export function SettingsDialog() {
 										<span className="text-muted-foreground ml-4">{cls}</span>
 										<input
 											type="color"
-											value={modelColors[model.name]?.getColorByLabel(cls) ?? "#000000"}
+											value={modelColors[model.name]?.getColorByLabel(cls)}
 											onChange={(e) => {
 												requestIdleCallback(() => {
 													handleColorChange(model.name, cls, e.target.value);

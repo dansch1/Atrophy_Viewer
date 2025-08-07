@@ -9,20 +9,18 @@ import { showError, showSuccess } from "./lib/toast";
 import { getDicomMetadata, type DicomMetadata } from "./utils/dicom";
 
 const App: React.FC = () => {
-	const { dicomPairs, setDicomPairs, setSelectedPair, setAnnotations } = useViewer();
+	const { dicomPairs, setDicomPairs, setSelectedIndex, setAnnotations } = useViewer();
 
 	const handleUpload = async (files: FileList) => {
 		const fileArray = Array.from(files);
 
-		const parsed: (DicomMetadata | null)[] = await Promise.all(
-			fileArray.map(async (file) => {
-				try {
-					return await getDicomMetadata(file);
-				} catch (err) {
+		const parsed = await Promise.all(
+			fileArray.map((file) =>
+				getDicomMetadata(file).catch((err) => {
 					console.error("Failed to read DICOM metadata", { file, err });
 					return null;
-				}
-			})
+				})
+			)
 		);
 
 		const valid = parsed.filter((d): d is DicomMetadata => d !== null);
@@ -32,21 +30,22 @@ const App: React.FC = () => {
 			return;
 		}
 
-		// TODO
-		const volumeFiles = valid.filter((d) => d.frames > 1);
-		const fundusFiles = valid.filter((d) => d.frames === 1);
+		const volumeFiles = [];
+		const fundusFiles = [];
 
-		const matched: { volume: File; fundus: File }[] = [];
-
-		for (const vol of volumeFiles) {
-			const match = fundusFiles.find(
-				(fun) => fun.studyInstanceUID && vol.studyInstanceUID && fun.studyInstanceUID === vol.studyInstanceUID
-			);
-
-			if (match) {
-				matched.push({ volume: vol.file, fundus: match.file });
-			}
+		for (const d of valid) {
+			if (d.frames > 1) volumeFiles.push(d);
+			else fundusFiles.push(d);
 		}
+
+		const volumeMap = new Map(volumeFiles.map((v) => [v.studyInstanceUID, v]));
+
+		const matched = fundusFiles
+			.filter((f) => f.studyInstanceUID && volumeMap.has(f.studyInstanceUID))
+			.map((f) => ({
+				volume: volumeMap.get(f.studyInstanceUID)!,
+				fundus: f,
+			}));
 
 		if (matched.length === 0) {
 			showError(
@@ -59,7 +58,7 @@ const App: React.FC = () => {
 
 		setDicomPairs(matched);
 		setAnnotations({});
-		setSelectedPair(0);
+		setSelectedIndex(0);
 
 		showSuccess("DICOM files loaded successfully", `${matched.length} pair(s) matched.`);
 	};
