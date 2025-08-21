@@ -1,15 +1,15 @@
+import type { SliceAnnotations, VolumeAnnotations } from "@/api/annotation";
+import { fetchModels, type ModelData } from "@/api/model";
 import { usePersistentState } from "@/hooks/usePersistentState";
+import type { FundusData, VolumeData } from "@/lib/dicom";
 import { LabelColors } from "@/lib/labelColors";
 import { showError } from "@/lib/toast";
-import type { SliceAnnotations, VolumeAnnotations } from "@/services/annotation";
-import { fetchModels, type ModelData } from "@/services/model";
-import type { DicomMetadata } from "@/utils/dicom";
 import { useEffect, useState } from "react";
 import { usePersistentModelColors } from "./usePersistentModelColors";
 
 export type DicomPair = {
-	volume: DicomMetadata;
-	fundus: DicomMetadata;
+	volume: VolumeData;
+	fundus: FundusData;
 };
 
 export type ModelColors = {
@@ -21,8 +21,8 @@ export type ViewerState = {
 	setDicomPairs: (files: DicomPair[]) => void;
 	selectedIndex: number;
 	setSelectedIndex: (index: number) => void;
-	selectedVolume: DicomMetadata | undefined;
-	selectedFundus: DicomMetadata | undefined;
+	selectedVolume: VolumeData | undefined;
+	selectedFundus: FundusData | undefined;
 	selectedSlice: number | null;
 	setSelectedSlice: (index: number | null) => void;
 	showSlices: boolean;
@@ -45,7 +45,7 @@ export type ViewerState = {
 	setSelectedModel: (model: string) => void;
 	modelColors: ModelColors;
 	setModelColors: React.Dispatch<React.SetStateAction<ModelColors>>;
-	selectedLabelColors: LabelColors | undefined;
+	selectedLabelColors: LabelColors;
 };
 
 export function useViewerState(): ViewerState {
@@ -69,7 +69,8 @@ export function useViewerState(): ViewerState {
 	const [loadingModels, setLoadingModels] = useState(false);
 	const [selectedModel, setSelectedModel] = useState<string | null>(null);
 	const [modelColors, setModelColors] = usePersistentModelColors("viewer:modelColors");
-	const selectedLabelColors = selectedModel !== null ? modelColors[selectedModel] : undefined;
+	const emptyLabelColors = new LabelColors([], []);
+	const selectedLabelColors = selectedModel !== null ? modelColors[selectedModel] : emptyLabelColors;
 
 	useEffect(() => {
 		const loadModels = async () => {

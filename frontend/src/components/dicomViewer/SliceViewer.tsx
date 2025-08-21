@@ -1,5 +1,5 @@
 import { useViewer } from "@/context/ViewerStateProvider";
-import { renderDicom } from "@/utils/dicom";
+import { renderDicom } from "@/lib/dicom";
 import React, { useEffect, useRef } from "react";
 
 const SliceViewer: React.FC = () => {
@@ -11,7 +11,6 @@ const SliceViewer: React.FC = () => {
 		selectedSliceAnnotations,
 		showAnnotations,
 		showFilenames,
-		selectedModel,
 		selectedLabelColors,
 	} = useViewer();
 
@@ -29,16 +28,23 @@ const SliceViewer: React.FC = () => {
 
 	useEffect(() => {
 		const renderSelectedSlice = () => {
-			if (!selectedVolume || selectedSlice === null || !imgCanvasRef.current) {
+			if (
+				!selectedVolume ||
+				selectedSlice === null ||
+				selectedSlice < 0 ||
+				selectedSlice >= selectedVolume.frames ||
+				!imgCanvasRef.current
+			) {
 				return;
 			}
 
 			const { cols, rows, pixelData } = selectedVolume;
+
 			const frameSize = cols * rows;
 			const offset = selectedSlice * frameSize;
-			const slice = pixelData.slice(offset, offset + frameSize);
+			const sliceData = pixelData.subarray(offset, offset + frameSize);
 
-			renderDicom(slice, cols, rows, imgCanvasRef.current);
+			renderDicom(sliceData, cols, rows, imgCanvasRef.current);
 		};
 
 		renderSelectedSlice();
@@ -53,31 +59,27 @@ const SliceViewer: React.FC = () => {
 			<div className="relative">
 				<canvas ref={imgCanvasRef} />
 
-				{selectedSliceAnnotations && showAnnotations && selectedModel && (
+				{selectedSliceAnnotations && showAnnotations && (
 					<svg className="absolute top-0 left-0 w-full h-full">
-						{selectedSliceAnnotations.map((annotation, i) => {
-							const { x0, x1, cls } = annotation;
-
+						{selectedSliceAnnotations.map(({ x0, x1, cls }, i) => {
 							if (x0 >= x1 || x0 < 0 || x1 > selectedVolume.cols) {
 								return null;
 							}
 
-							const color = selectedLabelColors?.getColorByIndex(cls);
-
-							const rectX = (x0 / selectedVolume.cols) * 100;
-							const rectWidth = ((x1 - x0) / selectedVolume.cols) * 100;
+							const width = x1 - x0;
+							const color = selectedLabelColors.getColorByIndex(cls);
 
 							return (
 								<rect
-									key={`annotation-${i}`}
-									x={`${rectX}%`}
+									key={`slice-annotation-${i}`}
+									x={x0}
 									y="0"
-									width={`${rectWidth}%`}
+									width={width}
 									height="100%"
 									fill={color}
 									fillOpacity="0.3"
 									stroke={color}
-									strokeWidth="1"
+									strokeWidth="0.1"
 								/>
 							);
 						})}

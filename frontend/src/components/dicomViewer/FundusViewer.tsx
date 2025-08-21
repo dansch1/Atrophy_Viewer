@@ -1,6 +1,6 @@
 import { useViewer } from "@/context/ViewerStateProvider";
-import { DEFAULT_LABEL_COLOR } from "@/lib/labelColors";
-import { renderDicom } from "@/utils/dicom";
+import { renderDicom, type SlicePosition } from "@/lib/dicom";
+import { dot, lerp, mid, type Pt, unitNormal } from "@/lib/vec2";
 import React, { useEffect, useRef } from "react";
 
 const FundusViewer: React.FC = () => {
@@ -17,7 +17,6 @@ const FundusViewer: React.FC = () => {
 	} = useViewer();
 
 	const imgCanvasRef = useRef<HTMLCanvasElement>(null);
-	const annotationCanvasRef = useRef<HTMLCanvasElement>(null);
 
 	useEffect(() => {
 		const renderFundus = () => {
@@ -32,44 +31,52 @@ const FundusViewer: React.FC = () => {
 		renderFundus();
 	}, [selectedFundus]);
 
-	useEffect(() => {
-		const renderVolumeAnnotation = () => {
-			if (!selectedVolume || !selectedVolumeAnnotations || !annotationCanvasRef.current) {
-				return;
-			}
-
-			const canvas = annotationCanvasRef.current;
-			const ctx = canvas.getContext("2d");
-
-			if (!ctx) {
-				return;
-			}
-
-			const width = selectedVolume.cols;
-			const height = selectedVolume.rows;
-
-			canvas.width = width;
-			canvas.height = height;
-
-			const sliceWidth = width / selectedVolumeAnnotations.length;
-
-			for (let i = 0; i < selectedVolumeAnnotations.length; i++) {
-				const slice = selectedVolumeAnnotations[i];
-				const x = i * sliceWidth;
-
-				for (const { x0, x1, cls } of slice) {
-					const color = selectedLabelColors?.getColorByIndex(cls) ?? DEFAULT_LABEL_COLOR;
-					ctx.fillStyle = color;
-					ctx.fillRect(x, x0, sliceWidth, x1 - x0 + 1);
-				}
-			}
-		};
-
-		renderVolumeAnnotation();
-	}, [selectedVolume, selectedVolumeAnnotations]);
-
 	if (!selectedFundus) {
 		return null;
+	}
+
+	function annotationPoly(
+		i: number,
+		x0: number,
+		x1: number,
+		slices: SlicePosition[],
+		cols: number
+	): [Pt, Pt, Pt, Pt] {
+		const s = slices[i];
+
+		const p0 = { x: s.col0, y: s.row0 };
+		const p1 = { x: s.col1, y: s.row1 };
+
+		const mi = mid(p0, p1);
+		const { nx, ny } = unitNormal(p0, p1);
+
+		const prev = i > 0 ? slices[i - 1] : null;
+		const next = i < slices.length - 1 ? slices[i + 1] : null;
+
+		const halfGapTo = (s: SlicePosition | null): number => {
+			if (!s) {
+				return 1;
+			}
+
+			const ms = mid({ x: s.col0, y: s.row0 }, { x: s.col1, y: s.row1 });
+			return Math.abs(dot(ms.x - mi.x, ms.y - mi.y, nx, ny)) / 2;
+		};
+
+		const hp = prev ? halfGapTo(prev) : halfGapTo(next);
+		const hn = next ? halfGapTo(next) : halfGapTo(prev);
+
+		const t0 = x0 / (cols - 1);
+		const t1 = x1 / (cols - 1);
+
+		const A = lerp(p0, p1, t0);
+		const B = lerp(p0, p1, t1);
+
+		const Aminus = { x: A.x - nx * hp, y: A.y - ny * hp };
+		const Bminus = { x: B.x - nx * hp, y: B.y - ny * hp };
+		const Bplus = { x: B.x + nx * hn, y: B.y + ny * hn };
+		const Aplus = { x: A.x + nx * hn, y: A.y + ny * hn };
+
+		return [Aplus, Aminus, Bminus, Bplus];
 	}
 
 	return (
@@ -77,40 +84,71 @@ const FundusViewer: React.FC = () => {
 			<div className="relative">
 				<canvas ref={imgCanvasRef} />
 
-				{showAnnotations && (
-					<canvas ref={annotationCanvasRef} className="absolute top-0 left-0 z-10 pointer-events-none" />
+				{selectedVolume && selectedVolumeAnnotations && showAnnotations && (
+					<svg className="absolute top-0 left-0 w-full h-full">
+						<g>
+							{selectedVolumeAnnotations.flatMap((sliceAnnotations, i) =>
+								sliceAnnotations.map(({ x0, x1, cls }, j) => {
+									if (x0 >= x1 || x0 < 0 || x1 > selectedVolume.cols || i >= selectedVolume.frames) {
+										return null;
+									}
+
+									const points = annotationPoly(
+										i,
+										x0,
+										x1,
+										selectedVolume.slicePositions,
+										selectedVolume.cols
+									);
+									const color = selectedLabelColors.getColorByIndex(cls);
+
+									return (
+										<polygon
+											key={`fundus-annotation-${i}-${j}`}
+											points={points.map((p) => `${p.x},${p.y}`).join(" ")}
+											fill={color}
+											fillOpacity={0.3}
+											stroke={color}
+											strokeWidth={0.1}
+											className="cursor-pointer"
+											onClick={() => console.log("Clicked annotation", { i, j })}
+										/>
+									);
+								})
+							)}
+						</g>
+					</svg>
 				)}
 
 				{selectedVolume && showSlices && (
 					<svg className="absolute top-0 left-0 w-full h-full">
-						{Array.from({ length: selectedVolume.frames }).map((_, i) => {
-							const y = `${(i / selectedVolume.frames) * 100}%`;
-
-							return (
-								<g key={`slice-${i}`} className="group">
-									<line
-										y1={y}
-										y2={y}
-										x1="0"
-										x2="100%"
-										stroke="transparent"
-										strokeWidth="20"
-										className="cursor-pointer"
-										onClick={() => setSelectedSlice(i)}
-									/>
-
-									<line
-										y1={y}
-										y2={y}
-										x1="0"
-										x2="100%"
-										stroke={selectedSlice === i ? "blue" : "red"}
-										strokeWidth="1"
-										className="group-hover:stroke-blue-500 pointer-events-none"
-									/>
-								</g>
-							);
-						})}
+						<g>
+							{selectedVolume.slicePositions.map(({ row0, col0, row1, col1 }, i) => {
+								return (
+									<g key={`fundus-slice-${i}`} className="group">
+										<line
+											x1={col0}
+											x2={col1}
+											y1={row0}
+											y2={row1}
+											stroke="transparent"
+											strokeWidth={10}
+											className="cursor-pointer"
+											onClick={() => setSelectedSlice(i)}
+										/>
+										<line
+											x1={col0}
+											x2={col1}
+											y1={row0}
+											y2={row1}
+											stroke={selectedSlice === i ? "blue" : "red"}
+											strokeWidth={2}
+											className="group-hover:stroke-blue-500 pointer-events-none"
+										/>
+									</g>
+								);
+							})}
+						</g>
 					</svg>
 				)}
 			</div>

@@ -20,7 +20,7 @@ export const LegendBox = () => {
 				<div key={cls} className="flex items-center gap-2">
 					<div
 						className="w-4 h-4 rounded border"
-						style={{ backgroundColor: selectedLabelColors?.getColorByLabel(cls) }}
+						style={{ backgroundColor: selectedLabelColors.getColorByLabel(cls) }}
 					/>
 					<span className="text-muted-foreground">{cls}</span>
 				</div>

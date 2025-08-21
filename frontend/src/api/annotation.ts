@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fetchWithTimeout } from "./fetch";
+import { fetchWithTimeout } from "./http";
 
 export const AnnotationTupleSchema = z
 	.tuple([z.number(), z.number(), z.number()])

@@ -1,9 +1,9 @@
+import { fetchAnnotations } from "@/api/annotation";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useViewer } from "@/context/ViewerStateProvider";
 import { showError, showSuccess } from "@/lib/toast";
-import { fetchAnnotations } from "@/services/annotation";
 import { ChevronLeft, ChevronRight, Image, List, Pause, Play } from "lucide-react";
 import React, { useEffect, useState } from "react";
 
@@ -12,6 +12,7 @@ const Controls: React.FC = () => {
 		dicomPairs,
 		selectedIndex,
 		setSelectedIndex,
+		selectedVolume,
 		selectedFundus,
 		showSlices,
 		setShowSlices,
@@ -40,7 +41,7 @@ const Controls: React.FC = () => {
 		};
 
 		updateAnnotations();
-	}, [selectedIndex]);
+	}, [selectedVolume]);
 
 	const handleAnnotations = async () => {
 		if (showAnnotations) {

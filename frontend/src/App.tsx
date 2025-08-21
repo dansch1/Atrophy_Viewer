@@ -5,8 +5,8 @@ import DicomViewer from "./components/dicomViewer";
 import { GlobalLoader } from "./components/GlobalLoader";
 import Header from "./components/Header";
 import { useViewer } from "./context/ViewerStateProvider";
+import { getDicomData, type DicomData } from "./lib/dicom";
 import { showError, showSuccess } from "./lib/toast";
-import { getDicomMetadata, type DicomMetadata } from "./utils/dicom";
 
 const App: React.FC = () => {
 	const { dicomPairs, setDicomPairs, setSelectedIndex, setAnnotations } = useViewer();
@@ -16,14 +16,14 @@ const App: React.FC = () => {
 
 		const parsed = await Promise.all(
 			fileArray.map((file) =>
-				getDicomMetadata(file).catch((err) => {
-					console.error("Failed to read DICOM metadata", { file, err });
+				getDicomData(file).catch((err) => {
+					console.error("Failed to read DICOM", { file, err });
 					return null;
 				})
 			)
 		);
 
-		const valid = parsed.filter((d): d is DicomMetadata => d !== null);
+		const valid = parsed.filter((d): d is DicomData => d !== null);
 
 		if (valid.length === 0) {
 			showError("Parsing failed", "No valid DICOM files found.");
@@ -34,18 +34,24 @@ const App: React.FC = () => {
 		const fundusFiles = [];
 
 		for (const d of valid) {
-			if (d.frames > 1) volumeFiles.push(d);
-			else fundusFiles.push(d);
+			if (d.type === "volume") {
+				volumeFiles.push(d);
+			} else if (d.type === "fundus") {
+				fundusFiles.push(d);
+			}
 		}
 
-		const volumeMap = new Map(volumeFiles.map((v) => [v.studyInstanceUID, v]));
+		// TODO
+		const matched = [];
+		const fundusMap = new Map(fundusFiles.map((f) => [f.studyInstanceUID, f]));
 
-		const matched = fundusFiles
-			.filter((f) => f.studyInstanceUID && volumeMap.has(f.studyInstanceUID))
-			.map((f) => ({
-				volume: volumeMap.get(f.studyInstanceUID)!,
-				fundus: f,
-			}));
+		for (const volume of volumeFiles) {
+			const fundus = fundusMap.get(volume.studyInstanceUID);
+
+			if (fundus) {
+				matched.push({ volume, fundus });
+			}
+		}
 
 		if (matched.length === 0) {
 			showError(

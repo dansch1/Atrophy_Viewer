@@ -10,8 +10,10 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useViewer } from "@/context/ViewerStateProvider";
 import { useDarkMode } from "@/hooks/useDarkMode";
+import { DEFAULT_LABEL_COLOR } from "@/lib/labelColors";
+import { rafThrottle } from "@/lib/utils";
 import { ChevronDown, ChevronRight, Moon, Settings, Sun } from "lucide-react";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 
 export function SettingsDialog() {
 	const [isOpen, setIsOpen] = useState(false);
@@ -27,13 +29,17 @@ export function SettingsDialog() {
 		}));
 	};
 
-	const handleColorChange = (model: string, cls: string, color: string) => {
-		setModelColors((prev) => {
-			const updated = { ...prev };
-			updated[model]?.setColorByLabel(cls, color);
-			return updated;
-		});
-	};
+	const handleColorChange = useMemo(
+		() =>
+			rafThrottle((model: string, cls: string, color: string) => {
+				setModelColors((prev) => {
+					const updated = { ...prev };
+					updated[model]?.setColorByLabel(cls, color);
+					return updated;
+				});
+			}),
+		[setModelColors]
+	);
 
 	return (
 		<Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -84,11 +90,9 @@ export function SettingsDialog() {
 										<span className="text-muted-foreground ml-4">{cls}</span>
 										<input
 											type="color"
-											value={modelColors[model.name]?.getColorByLabel(cls)}
+											value={modelColors[model.name]?.getColorByLabel(cls) ?? DEFAULT_LABEL_COLOR}
 											onChange={(e) => {
-												requestIdleCallback(() => {
-													handleColorChange(model.name, cls, e.target.value);
-												});
+												handleColorChange(model.name, cls, e.target.value);
 											}}
 											className="w-10 h-6 border rounded"
 										/>
