@@ -46,3 +46,14 @@ export function rafThrottle<T extends (...args: any[]) => void>(fn: T) {
 
 	return throttled as T & { cancel: () => void };
 }
+
+export function clamp(value: number, min: number, max: number): number {
+	if (min > max) {
+		[min, max] = [max, min];
+	}
+	if (Number.isNaN(value)) {
+		return value;
+	}
+
+	return value < min ? min : value > max ? max : value;
+}

@@ -12,15 +12,23 @@ export type AnnotationTuple = z.infer<typeof AnnotationTupleSchema>;
 export type SliceAnnotations = z.infer<typeof SliceAnnotationsSchema>;
 export type VolumeAnnotations = z.infer<typeof VolumeAnnotationsSchema>;
 
-export async function fetchAnnotations(file: File, model: string): Promise<VolumeAnnotations> {
+export async function fetchAnnotations(
+	file: File,
+	model: string,
+	controller?: AbortController
+): Promise<VolumeAnnotations> {
 	const formData = new FormData();
 	formData.append("file", file);
 	formData.append("model", model);
 
-	const response = await fetchWithTimeout(`${import.meta.env.VITE_API_BASE}/annotate`, {
-		method: "POST",
-		body: formData,
-	});
+	const response = await fetchWithTimeout(
+		`${import.meta.env.VITE_API_BASE}/annotate`,
+		{
+			method: "POST",
+			body: formData,
+		},
+		controller
+	);
 
 	if (!response.ok) {
 		const text = await response.text();

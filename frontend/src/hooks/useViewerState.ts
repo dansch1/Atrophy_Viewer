@@ -9,7 +9,7 @@ import { usePersistentModelColors } from "./usePersistentModelColors";
 
 export type DicomPair = {
 	volume: VolumeData;
-	fundus: FundusData;
+	fundus?: FundusData;
 };
 
 export type ModelColors = {
@@ -19,30 +19,32 @@ export type ModelColors = {
 export type ViewerState = {
 	dicomPairs: DicomPair[];
 	setDicomPairs: (files: DicomPair[]) => void;
-	selectedIndex: number;
-	setSelectedIndex: (index: number) => void;
-	selectedVolume: VolumeData | undefined;
-	selectedFundus: FundusData | undefined;
-	selectedSlice: number | null;
-	setSelectedSlice: (index: number | null) => void;
-	showSlices: boolean;
-	setShowSlices: (value: boolean) => void;
-	annotations: Record<number, VolumeAnnotations>;
-	setAnnotations: React.Dispatch<React.SetStateAction<Record<number, VolumeAnnotations>>>;
-	loadingAnnotations: Set<number>;
-	setLoadingAnnotations: React.Dispatch<React.SetStateAction<Set<number>>>;
-	selectedVolumeAnnotations: VolumeAnnotations | undefined;
-	selectedSliceAnnotations: SliceAnnotations | undefined;
-	showAnnotations: boolean;
-	setShowAnnotations: (value: boolean) => void;
-	showFilenames: boolean;
-	setShowFilenames: (value: boolean) => void;
+	selectedPair: number;
+	setSelectedPair: (index: number) => void;
+	selectedVolume?: VolumeData;
+	selectedFundus?: FundusData;
+	selectedSlice: number;
+	setSelectedSlice: (index: number) => void;
 	models: ModelData[];
 	setModels: (models: ModelData[]) => void;
 	loadingModels: boolean;
 	setLoadingModels: (value: boolean) => void;
-	selectedModel: string | null;
+	selectedModel?: string;
 	setSelectedModel: (model: string) => void;
+	viewMode: "fundus" | "slice" | "both";
+	setViewMode: (mode: "fundus" | "slice" | "both") => void;
+	showSlices: boolean;
+	setShowSlices: (value: boolean) => void;
+	annotations: Map<string, Map<number, VolumeAnnotations>>;
+	setAnnotations: React.Dispatch<React.SetStateAction<Map<string, Map<number, VolumeAnnotations>>>>;
+	loadingAnnotations: Map<string, Set<number>>;
+	setLoadingAnnotations: React.Dispatch<React.SetStateAction<Map<string, Set<number>>>>;
+	selectedVolumeAnnotations?: VolumeAnnotations;
+	selectedSliceAnnotations?: SliceAnnotations;
+	showAnnotations: boolean;
+	setShowAnnotations: (value: boolean) => void;
+	showFilenames: boolean;
+	setShowFilenames: (value: boolean) => void;
 	modelColors: ModelColors;
 	setModelColors: React.Dispatch<React.SetStateAction<ModelColors>>;
 	selectedLabelColors: LabelColors;
@@ -50,27 +52,28 @@ export type ViewerState = {
 
 export function useViewerState(): ViewerState {
 	const [dicomPairs, setDicomPairs] = useState<DicomPair[]>([]);
-	const [selectedIndex, setSelectedIndex] = useState(0);
-	const selectedVolume = dicomPairs[selectedIndex]?.volume;
-	const selectedFundus = dicomPairs[selectedIndex]?.fundus;
-
-	const [selectedSlice, setSelectedSlice] = useState<number | null>(null);
-	const [showSlices, setShowSlices] = useState(false);
-
-	const [annotations, setAnnotations] = useState<Record<number, VolumeAnnotations>>({});
-	const [loadingAnnotations, setLoadingAnnotations] = useState<Set<number>>(new Set());
-	const selectedVolumeAnnotations = annotations[selectedIndex];
-	const selectedSliceAnnotations = selectedSlice !== null ? selectedVolumeAnnotations?.[selectedSlice] : undefined;
-	const [showAnnotations, setShowAnnotations] = useState(false);
-
-	const [showFilenames, setShowFilenames] = usePersistentState("viewer:showFilenames", true);
+	const [selectedPair, setSelectedPair] = useState(0);
+	const selectedVolume = dicomPairs[selectedPair]?.volume;
+	const selectedFundus = dicomPairs[selectedPair]?.fundus;
+	const [selectedSlice, setSelectedSlice] = useState<number>(0);
 
 	const [models, setModels] = useState<ModelData[]>([]);
 	const [loadingModels, setLoadingModels] = useState(false);
-	const [selectedModel, setSelectedModel] = useState<string | null>(null);
+	const [selectedModel, setSelectedModel] = useState<string>();
+
+	const [viewMode, setViewMode] = useState<"fundus" | "slice" | "both">("slice");
+	const [showSlices, setShowSlices] = useState(false);
+
+	const [annotations, setAnnotations] = useState<Map<string, Map<number, VolumeAnnotations>>>(new Map());
+	const [loadingAnnotations, setLoadingAnnotations] = useState<Map<string, Set<number>>>(new Map());
+	const selectedVolumeAnnotations = selectedModel ? annotations.get(selectedModel)?.get(selectedPair) : undefined;
+	const selectedSliceAnnotations = selectedVolumeAnnotations?.[selectedSlice];
+	const [showAnnotations, setShowAnnotations] = useState(false);
+
+	const [showFilenames, setShowFilenames] = usePersistentState("viewer:showFilenames", true);
 	const [modelColors, setModelColors] = usePersistentModelColors("viewer:modelColors");
 	const emptyLabelColors = new LabelColors([], []);
-	const selectedLabelColors = selectedModel !== null ? modelColors[selectedModel] : emptyLabelColors;
+	const selectedLabelColors = selectedModel ? modelColors[selectedModel] : emptyLabelColors;
 
 	useEffect(() => {
 		const loadModels = async () => {
@@ -98,7 +101,7 @@ export function useViewerState(): ViewerState {
 
 					return updated;
 				});
-			} catch (err) {
+			} catch (err: any) {
 				console.error("Model request failed", err);
 				showError("Model error", "Failed to load the models. Please reload the page or try again later.");
 			} finally {
@@ -112,12 +115,20 @@ export function useViewerState(): ViewerState {
 	return {
 		dicomPairs,
 		setDicomPairs,
-		selectedIndex,
-		setSelectedIndex,
+		selectedPair,
+		setSelectedPair,
 		selectedVolume,
 		selectedFundus,
 		selectedSlice,
 		setSelectedSlice,
+		models,
+		setModels,
+		loadingModels,
+		setLoadingModels,
+		selectedModel,
+		setSelectedModel,
+		viewMode,
+		setViewMode,
 		showSlices,
 		setShowSlices,
 		annotations,
@@ -130,12 +141,6 @@ export function useViewerState(): ViewerState {
 		setShowAnnotations,
 		showFilenames,
 		setShowFilenames,
-		models,
-		setModels,
-		loadingModels,
-		setLoadingModels,
-		selectedModel,
-		setSelectedModel,
 		modelColors,
 		setModelColors,
 		selectedLabelColors,

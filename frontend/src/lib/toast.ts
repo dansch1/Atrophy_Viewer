@@ -11,3 +11,9 @@ export function showSuccess(message: string, description?: string) {
 		description,
 	});
 }
+
+export function showInfo(message: string, description?: string) {
+	toast(message, {
+		description,
+	});
+}

@@ -1,11 +1,16 @@
-export async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 5000): Promise<Response> {
-	const controller = new AbortController();
-	const id = setTimeout(() => controller.abort(), timeoutMs);
+export async function fetchWithTimeout(
+	url: string,
+	options: RequestInit = {},
+	controller?: AbortController,
+	timeoutMs = 600_000
+): Promise<Response> {
+	const timedController = controller ?? new AbortController();
+	const id = setTimeout(() => timedController.abort(new Error(`Request timed out after ${timeoutMs}ms`)), timeoutMs);
 
 	try {
 		return await fetch(url, {
 			...options,
-			signal: controller.signal,
+			signal: timedController.signal,
 		});
 	} finally {
 		clearTimeout(id);

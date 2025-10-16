@@ -5,69 +5,9 @@ import DicomViewer from "./components/dicomViewer";
 import { GlobalLoader } from "./components/GlobalLoader";
 import Header from "./components/Header";
 import { useViewer } from "./context/ViewerStateProvider";
-import { getDicomData, type DicomData } from "./lib/dicom";
-import { showError, showSuccess } from "./lib/toast";
 
 const App: React.FC = () => {
-	const { dicomPairs, setDicomPairs, setSelectedIndex, setAnnotations } = useViewer();
-
-	const handleUpload = async (files: FileList) => {
-		const fileArray = Array.from(files);
-
-		const parsed = await Promise.all(
-			fileArray.map((file) =>
-				getDicomData(file).catch((err) => {
-					console.error("Failed to read DICOM", { file, err });
-					return null;
-				})
-			)
-		);
-
-		const valid = parsed.filter((d): d is DicomData => d !== null);
-
-		if (valid.length === 0) {
-			showError("Parsing failed", "No valid DICOM files found.");
-			return;
-		}
-
-		const volumeFiles = [];
-		const fundusFiles = [];
-
-		for (const d of valid) {
-			if (d.type === "volume") {
-				volumeFiles.push(d);
-			} else if (d.type === "fundus") {
-				fundusFiles.push(d);
-			}
-		}
-
-		// TODO
-		const matched = [];
-		const fundusMap = new Map(fundusFiles.map((f) => [f.studyInstanceUID, f]));
-
-		for (const volume of volumeFiles) {
-			const fundus = fundusMap.get(volume.studyInstanceUID);
-
-			if (fundus) {
-				matched.push({ volume, fundus });
-			}
-		}
-
-		if (matched.length === 0) {
-			showError(
-				"No matching fundus/volume pairs found",
-				"Each volume must have a corresponding fundus image with the same StudyInstanceUID."
-			);
-
-			return;
-		}
-
-		setDicomPairs(matched);
-		setAnnotations({});
-		setSelectedIndex(0);
-
-		showSuccess("DICOM files loaded successfully", `${matched.length} pair(s) matched.`);
-	};
+	const { dicomPairs } = useViewer();
 
 	return (
 		<div>
@@ -75,7 +15,7 @@ const App: React.FC = () => {
 			<Toaster position="top-center" />
 
 			<div className="flex flex-col h-screen">
-				<Header onFileUpload={handleUpload} />
+				<Header />
 				<main className="flex-1 overflow-hidden">
 					{dicomPairs.length > 0 ? (
 						<DicomViewer />

@@ -18,7 +18,7 @@ export function usePersistentState<T>(
 		try {
 			const stored = localStorage.getItem(key);
 			return stored !== null ? deserialize(stored) : defaultValue;
-		} catch (error) {
+		} catch (error: any) {
 			console.warn(`Failed to load localStorage key "${key}"`, error);
 			return defaultValue;
 		}
@@ -27,7 +27,7 @@ export function usePersistentState<T>(
 	useEffect(() => {
 		try {
 			localStorage.setItem(key, serialize(state));
-		} catch (error) {
+		} catch (error: any) {
 			console.warn(`Failed to save localStorage key "${key}"`, error);
 		}
 	}, [key, state, serialize]);

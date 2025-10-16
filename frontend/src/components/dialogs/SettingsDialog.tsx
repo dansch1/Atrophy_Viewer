@@ -16,11 +16,11 @@ import { ChevronDown, ChevronRight, Moon, Settings, Sun } from "lucide-react";
 import React, { useMemo, useState } from "react";
 
 export function SettingsDialog() {
-	const [isOpen, setIsOpen] = useState(false);
-	const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>({});
+	const { models, showFilenames, setShowFilenames, modelColors, setModelColors } = useViewer();
 
+	const [isOpen, setIsOpen] = useState(false);
 	const { isDark, setIsDark } = useDarkMode();
-	const { showFilenames, setShowFilenames, models, modelColors, setModelColors } = useViewer();
+	const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>({});
 
 	const toggleModel = (modelName: string) => {
 		setExpandedModels((prev) => ({

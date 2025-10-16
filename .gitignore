@@ -2,6 +2,7 @@
 __pycache__/
 /backend/.venv
 /backend/*.pyc
+/backend/models/*.pth
 
 # Frontend
 /frontend/node_modules

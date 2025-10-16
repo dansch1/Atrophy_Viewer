@@ -6,7 +6,6 @@ type DicomDataBase = {
 	rows: number;
 	cols: number;
 	frames: number;
-	pixelData: Uint8Array;
 };
 
 export type SlicePosition = {
@@ -19,10 +18,12 @@ export type SlicePosition = {
 export type VolumeData = DicomDataBase & {
 	type: "volume";
 	slicePositions: SlicePosition[];
+	images: ImageData[];
 };
 
 export type FundusData = DicomDataBase & {
 	type: "fundus";
+	image: ImageData;
 };
 
 export type DicomData = VolumeData | FundusData;
@@ -50,6 +51,13 @@ export async function getDicomData(file: File): Promise<DicomData> {
 	const pixelData = new Uint8Array(dataSet.byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
 
 	if (sopClassUID === UID_VOLUME) {
+		const images: ImageData[] = [];
+
+		for (let frame = 0; frame < frames; frame++) {
+			const framePixels = pixelsForFrame(pixelData, frame, rows, cols);
+			images.push(normalizeDicom(framePixels, cols, rows));
+		}
+
 		const slicePositions = readSlicePositions(dataSet);
 
 		return {
@@ -59,12 +67,14 @@ export async function getDicomData(file: File): Promise<DicomData> {
 			rows,
 			cols,
 			frames,
-			pixelData,
+			images,
 			slicePositions,
 		};
 	}
 
 	if (sopClassUID === UID_FUNDUS) {
+		const image = normalizeDicom(pixelData, cols, rows);
+
 		return {
 			type: "fundus",
 			file,
@@ -72,11 +82,35 @@ export async function getDicomData(file: File): Promise<DicomData> {
 			rows,
 			cols,
 			frames,
-			pixelData,
+			image,
 		};
 	}
 
 	throw new Error(`DICOM file could not be classified: ${file.name}`);
+}
+
+function pixelsForFrame(pixelData: Uint8Array, frame: number, rows: number, cols: number) {
+	const size = rows * cols;
+	const start = frame * size;
+	return pixelData.subarray(start, start + size);
+}
+
+function normalizeDicom(pixelData: Uint8Array, cols: number, rows: number): ImageData {
+	const imageData = new ImageData(cols, rows);
+
+	const min = pixelData.reduce((m, v) => (v < m ? v : m), Infinity);
+	const max = pixelData.reduce((m, v) => (v > m ? v : m), -Infinity);
+
+	for (let i = 0; i < cols * rows; i++) {
+		const val = Math.round(((pixelData[i] - min) / (max - min)) * 255);
+
+		imageData.data[i * 4 + 0] = val;
+		imageData.data[i * 4 + 1] = val;
+		imageData.data[i * 4 + 2] = val;
+		imageData.data[i * 4 + 3] = 255;
+	}
+
+	return imageData;
 }
 
 function readSlicePositions(dataSet: dicomParser.DataSet): SlicePosition[] {
@@ -91,10 +125,10 @@ function readSlicePositions(dataSet: dicomParser.DataSet): SlicePosition[] {
 		}
 
 		const f = (i: number) => ds.float("x00220032", i);
-		const row0 = f(0),
-			col0 = f(1),
-			row1 = f(2),
-			col1 = f(3);
+		const row0 = f(0);
+		const col0 = f(1);
+		const row1 = f(2);
+		const col1 = f(3);
 
 		if (!row0 || !col0 || !row1 || !col1) {
 			continue;
@@ -106,41 +140,15 @@ function readSlicePositions(dataSet: dicomParser.DataSet): SlicePosition[] {
 	return slicePositions;
 }
 
-export const renderDicom = (data: Uint8Array, width: number, height: number, canvas: HTMLCanvasElement) => {
+export const renderDicom = (image: ImageData, canvas: HTMLCanvasElement) => {
 	const ctx = canvas.getContext("2d");
 
 	if (!ctx) {
 		return;
 	}
 
-	const dpr = window.devicePixelRatio;
+	canvas.width = image.width;
+	canvas.height = image.height;
 
-	canvas.width = width * dpr;
-	canvas.height = height * dpr;
-
-	canvas.style.width = `${width}px`;
-	canvas.style.height = `${height}px`;
-
-	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-	const imageData = normalizeDicom(data, width, height);
-	ctx.putImageData(imageData, 0, 0);
+	ctx.putImageData(image, 0, 0);
 };
-
-export function normalizeDicom(data: Uint8Array, width: number, height: number): ImageData {
-	const imageData = new ImageData(width, height);
-
-	const min = data.reduce((m, v) => (v < m ? v : m), Infinity);
-	const max = data.reduce((m, v) => (v > m ? v : m), -Infinity);
-
-	for (let i = 0; i < width * height; i++) {
-		const val = Math.round(((data[i] - min) / (max - min)) * 255);
-
-		imageData.data[i * 4 + 0] = val;
-		imageData.data[i * 4 + 1] = val;
-		imageData.data[i * 4 + 2] = val;
-		imageData.data[i * 4 + 3] = 255;
-	}
-
-	return imageData;
-}

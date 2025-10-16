@@ -1,5 +1,6 @@
 import { useViewer } from "@/context/ViewerStateProvider";
 import { renderDicom } from "@/lib/dicom";
+import { clamp } from "@/lib/utils";
 import React, { useEffect, useRef } from "react";
 
 const SliceViewer: React.FC = () => {
@@ -7,7 +8,7 @@ const SliceViewer: React.FC = () => {
 		selectedVolume,
 		selectedSlice,
 		setSelectedSlice,
-		showSlices,
+		viewMode,
 		selectedSliceAnnotations,
 		showAnnotations,
 		showFilenames,
@@ -17,40 +18,17 @@ const SliceViewer: React.FC = () => {
 	const imgCanvasRef = useRef<HTMLCanvasElement>(null);
 
 	useEffect(() => {
-		setSelectedSlice(null);
-	}, [selectedVolume]);
-
-	useEffect(() => {
-		if (!showSlices) {
-			setSelectedSlice(null);
+		if (!selectedVolume || !imgCanvasRef.current) {
+			return;
 		}
-	}, [showSlices]);
 
-	useEffect(() => {
-		const renderSelectedSlice = () => {
-			if (
-				!selectedVolume ||
-				selectedSlice === null ||
-				selectedSlice < 0 ||
-				selectedSlice >= selectedVolume.frames ||
-				!imgCanvasRef.current
-			) {
-				return;
-			}
+		const maxIdx = Math.max(0, (selectedVolume?.frames ?? 0) - 1);
+		setSelectedSlice(clamp(selectedSlice, 0, maxIdx));
 
-			const { cols, rows, pixelData } = selectedVolume;
+		renderDicom(selectedVolume.images[selectedSlice], imgCanvasRef.current);
+	}, [selectedVolume, selectedSlice, viewMode]);
 
-			const frameSize = cols * rows;
-			const offset = selectedSlice * frameSize;
-			const sliceData = pixelData.subarray(offset, offset + frameSize);
-
-			renderDicom(sliceData, cols, rows, imgCanvasRef.current);
-		};
-
-		renderSelectedSlice();
-	}, [selectedVolume, selectedSlice]);
-
-	if (!selectedVolume || selectedSlice === null) {
+	if (!selectedVolume || viewMode === "fundus") {
 		return null;
 	}
 
@@ -58,6 +36,10 @@ const SliceViewer: React.FC = () => {
 		<div className="flex flex-col items-center">
 			<div className="relative">
 				<canvas ref={imgCanvasRef} />
+
+				<div className="absolute top-2 left-3 text-sm text-center text-green-500">
+					{`${selectedSlice + 1} / ${selectedVolume.frames}`}
+				</div>
 
 				{selectedSliceAnnotations && showAnnotations && (
 					<svg className="absolute top-0 left-0 w-full h-full">

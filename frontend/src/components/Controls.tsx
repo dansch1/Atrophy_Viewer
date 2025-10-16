@@ -3,17 +3,22 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useViewer } from "@/context/ViewerStateProvider";
-import { showError, showSuccess } from "@/lib/toast";
-import { ChevronLeft, ChevronRight, Image, List, Pause, Play } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import { showError, showInfo, showSuccess } from "@/lib/toast";
+import { ChevronLeft, ChevronRight, Image, List, Pause, Play, Square, SquareSplitVertical } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
 
 const Controls: React.FC = () => {
 	const {
 		dicomPairs,
-		selectedIndex,
-		setSelectedIndex,
-		selectedVolume,
+		selectedPair,
+		setSelectedPair,
 		selectedFundus,
+		setSelectedSlice,
+		models,
+		selectedModel,
+		setSelectedModel,
+		viewMode,
+		setViewMode,
 		showSlices,
 		setShowSlices,
 		annotations,
@@ -22,44 +27,48 @@ const Controls: React.FC = () => {
 		setLoadingAnnotations,
 		showAnnotations,
 		setShowAnnotations,
-		models,
-		selectedModel,
-		setSelectedModel,
 	} = useViewer();
 
 	const [isPlaying, setIsPlaying] = useState(false);
+	const abortControllers = useRef<AbortController[]>([]);
 
 	useEffect(() => {
-		const updateAnnotations = async () => {
-			if (!showAnnotations) {
-				return;
-			}
+		setShowAnnotations(false);
+		cancelAllRequests();
 
-			if (!(await tryFetchAnnotations(selectedIndex))) {
-				setShowAnnotations(false);
-			}
-		};
+		resetViewer();
+	}, [dicomPairs]);
 
-		updateAnnotations();
-	}, [selectedVolume]);
+	useEffect(() => {
+		setShowAnnotations(false);
+		cancelAllRequests();
+	}, [selectedModel]);
 
-	const handleAnnotations = async () => {
+	useEffect(() => {
 		if (showAnnotations) {
-			setShowAnnotations(false);
-			return;
+			tryFetchAnnotations(selectedPair);
 		}
+	}, [selectedPair, annotations]);
 
-		if (await tryFetchAnnotations(selectedIndex)) {
-			setShowAnnotations(true);
-		}
+	const resetViewer = () => {
+		setSelectedPair(0);
+		setSelectedSlice(0);
+		setViewMode("slice");
+		setShowSlices(false);
+		setAnnotations(new Map());
 	};
 
 	const tryFetchAnnotations = async (index: number) => {
-		if (annotations[index]) {
+		if (!selectedModel) {
+			showError("No model selected", "Please select a model before toggling annotation.");
+			return false;
+		}
+
+		if (annotations.get(selectedModel)?.has(index)) {
 			return true;
 		}
 
-		if (loadingAnnotations.has(index)) {
+		if (loadingAnnotations.get(selectedModel)?.has(index)) {
 			return false;
 		}
 
@@ -70,48 +79,79 @@ const Controls: React.FC = () => {
 			return false;
 		}
 
-		if (!selectedModel) {
-			showError("No model selected", "Please select a model before toggling annotation.");
-			return false;
-		}
+		setLoadingAnnotations((prev) => {
+			const next = new Map(prev);
+			const set = new Set(next.get(selectedModel) ?? []);
+			set.add(index);
+			next.set(selectedModel, set);
+			return next;
+		});
 
-		setLoadingAnnotations((prev) => new Set(prev).add(index));
+		const controller = new AbortController();
+		abortControllers.current.push(controller);
 
 		try {
-			const data = await fetchAnnotations(file, selectedModel);
+			const data = await fetchAnnotations(file, selectedModel, controller);
 
-			setAnnotations((prev) => ({
-				...prev,
-				[index]: data,
-			}));
-		} catch (err) {
-			console.error("Annotation request failed", { file, err });
-			showError("Annotation error", "Failed to annotate the volume file. Please try again.");
+			setAnnotations((prev) => {
+				const next = new Map(prev);
+				const perModel = new Map(next.get(selectedModel) ?? []);
+				perModel.set(index, data);
+				next.set(selectedModel, perModel);
+				return next;
+			});
+
+			showSuccess("Annotation added", `Annotations loaded for file: ${file.name}`);
+			return true;
+		} catch (err: any) {
+			if (err.name === "AbortError") {
+				showInfo("Request cancelled", `The annotation request for ${file.name} was cancelled.`);
+			} else {
+				console.error("Annotation request failed", { file, err });
+				showError("Annotation error", "Failed to annotate the volume file. Please try again.");
+			}
+
 			return false;
 		} finally {
 			setLoadingAnnotations((prev) => {
-				const next = new Set(prev);
-				next.delete(index);
+				const next = new Map(prev);
+				const set = new Set(next.get(selectedModel) ?? []);
+				set.delete(index);
+				next.set(selectedModel, set);
 				return next;
 			});
+
+			abortControllers.current = abortControllers.current.filter((c) => c !== controller);
+		}
+	};
+
+	const cancelAllRequests = () => {
+		abortControllers.current.forEach((c) => c.abort());
+		abortControllers.current = [];
+	};
+
+	const toggleAnnotations = () => {
+		if (showAnnotations) {
+			setShowAnnotations(false);
+			return;
 		}
 
-		showSuccess("Annotation added", `Annotations loaded for file: ${file.name}`);
-		return true;
+		setShowAnnotations(true);
+		tryFetchAnnotations(selectedPair);
 	};
 
 	return (
 		<footer className="relative grid grid-cols-3 items-center p-4 bg-accent">
 			<div className="justify-self-start text-sm">
-				{dicomPairs.length > 0 ? `File: ${selectedIndex + 1} / ${dicomPairs.length}` : "No files selected"}
+				{dicomPairs.length > 0 ? `File: ${selectedPair + 1} / ${dicomPairs.length}` : "No files selected"}
 			</div>
 
 			<div className="justify-self-center flex gap-2">
 				<Button
 					variant="outline"
 					size="icon"
-					onClick={() => setSelectedIndex(Math.max(0, selectedIndex - 1))}
-					disabled={selectedIndex <= 0}
+					onClick={() => setSelectedPair(Math.max(0, selectedPair - 1))}
+					disabled={selectedPair <= 0}
 				>
 					<ChevronLeft className="w-4 h-4" />
 				</Button>
@@ -126,8 +166,8 @@ const Controls: React.FC = () => {
 				<Button
 					variant="outline"
 					size="icon"
-					onClick={() => setSelectedIndex(Math.min(dicomPairs.length - 1, selectedIndex + 1))}
-					disabled={selectedIndex >= dicomPairs.length - 1}
+					onClick={() => setSelectedPair(Math.min(dicomPairs.length - 1, selectedPair + 1))}
+					disabled={selectedPair >= dicomPairs.length - 1}
 				>
 					<ChevronRight className="w-4 h-4" />
 				</Button>
@@ -163,10 +203,43 @@ const Controls: React.FC = () => {
 					<Tooltip delayDuration={500}>
 						<TooltipTrigger asChild>
 							<Button
+								variant="outline"
+								size="icon"
+								onClick={() =>
+									setViewMode(
+										viewMode === "fundus" ? "slice" : viewMode === "slice" ? "both" : "fundus"
+									)
+								}
+							>
+								{viewMode === "fundus" ? (
+									<Image className="w-4 h-4" />
+								) : viewMode === "slice" ? (
+									<Square className="w-4 h-4" />
+								) : (
+									<SquareSplitVertical className="w-4 h-4 transform rotate-90" />
+								)}
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent>
+							<p>
+								{viewMode === "fundus"
+									? "Show Fundus"
+									: viewMode === "slice"
+									? "Show Volume"
+									: "Show Fundus & Volume"}
+							</p>
+						</TooltipContent>
+					</Tooltip>
+				</TooltipProvider>
+
+				<TooltipProvider>
+					<Tooltip delayDuration={500}>
+						<TooltipTrigger asChild>
+							<Button
 								variant={showSlices ? "default" : "outline"}
 								size="icon"
 								onClick={() => setShowSlices(!showSlices)}
-								disabled={!selectedFundus}
+								disabled={!selectedFundus || viewMode === "slice"}
 							>
 								<List className="w-4 h-4" />
 							</Button>
@@ -183,11 +256,11 @@ const Controls: React.FC = () => {
 							<Button
 								variant={showAnnotations ? "default" : "outline"}
 								size="icon"
-								onClick={handleAnnotations}
+								onClick={toggleAnnotations}
 								disabled={
-									!dicomPairs[selectedIndex] ||
+									!dicomPairs[selectedPair] ||
 									!selectedModel ||
-									loadingAnnotations.has(selectedIndex)
+									!!loadingAnnotations.get(selectedModel)?.has(selectedPair)
 								}
 							>
 								<Image className="w-4 h-4" />

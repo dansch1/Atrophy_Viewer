@@ -4,7 +4,8 @@ import { Loader2 } from "lucide-react";
 export function GlobalLoader() {
 	const { loadingModels, loadingAnnotations } = useViewer();
 
-	const isLoading = loadingModels || loadingAnnotations.size > 0;
+	const anyModelLoading = Array.from(loadingAnnotations.values()).some((s) => s.size > 0);
+	const isLoading = loadingModels || anyModelLoading;
 
 	if (!isLoading) {
 		return null;

@@ -9,6 +9,8 @@ const FundusViewer: React.FC = () => {
 		selectedFundus,
 		selectedSlice,
 		setSelectedSlice,
+		viewMode,
+		setViewMode,
 		showSlices,
 		selectedVolumeAnnotations,
 		showAnnotations,
@@ -19,19 +21,12 @@ const FundusViewer: React.FC = () => {
 	const imgCanvasRef = useRef<HTMLCanvasElement>(null);
 
 	useEffect(() => {
-		const renderFundus = () => {
-			if (!selectedFundus || !imgCanvasRef.current) {
-				return;
-			}
+		if (selectedFundus && imgCanvasRef.current) {
+			renderDicom(selectedFundus.image, imgCanvasRef.current);
+		}
+	}, [selectedFundus, viewMode]);
 
-			const { cols, rows, pixelData } = selectedFundus;
-			renderDicom(pixelData, cols, rows, imgCanvasRef.current);
-		};
-
-		renderFundus();
-	}, [selectedFundus]);
-
-	if (!selectedFundus) {
+	if (!selectedFundus || viewMode === "slice") {
 		return null;
 	}
 
@@ -134,7 +129,10 @@ const FundusViewer: React.FC = () => {
 											stroke="transparent"
 											strokeWidth={10}
 											className="cursor-pointer"
-											onClick={() => setSelectedSlice(i)}
+											onClick={() => {
+												setSelectedSlice(i);
+												setViewMode("both");
+											}}
 										/>
 										<line
 											x1={col0}

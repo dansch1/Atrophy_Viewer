@@ -2,14 +2,15 @@ import { Button } from "@/components/ui/button";
 import { Download, UploadCloud } from "lucide-react";
 import React, { useRef, useState, type DragEvent } from "react";
 
+import { useViewer } from "@/context/ViewerStateProvider";
+import { getDicomData, type DicomData } from "@/lib/dicom";
+import { showError, showSuccess } from "@/lib/toast";
 import { HelpDialog } from "./dialogs/HelpDialog";
 import { SettingsDialog } from "./dialogs/SettingsDialog";
 
-interface HeaderProps {
-	onFileUpload: (files: FileList) => void;
-}
+const Header = () => {
+	const { setDicomPairs } = useViewer();
 
-const Header: React.FC<HeaderProps> = ({ onFileUpload }) => {
 	const [isDragOver, setIsDragOver] = useState(false);
 	const [, setShowExport] = useState(false);
 
@@ -37,6 +38,55 @@ const Header: React.FC<HeaderProps> = ({ onFileUpload }) => {
 
 	const handleDragLeave = () => {
 		setIsDragOver(false);
+	};
+
+	const onFileUpload = async (files: FileList) => {
+		const fileArray = Array.from(files);
+
+		const parsed = await Promise.all(
+			fileArray.map((file) =>
+				getDicomData(file).catch((err) => {
+					console.error("Failed to read DICOM", { file, err });
+					return null;
+				})
+			)
+		);
+
+		const valid = parsed.filter((d): d is DicomData => d !== null);
+
+		if (valid.length === 0) {
+			showError("Parsing failed", "No valid DICOM files found.");
+			return;
+		}
+
+		const volumeFiles = [];
+		const fundusFiles = [];
+
+		for (const d of valid) {
+			if (d.type === "volume") {
+				volumeFiles.push(d);
+			} else if (d.type === "fundus") {
+				fundusFiles.push(d);
+			}
+		}
+
+		// TODO
+		const pairs = [];
+		const fundusMap = new Map(fundusFiles.map((f) => [f.studyInstanceUID, f]));
+
+		for (const volume of volumeFiles) {
+			const fundus = fundusMap.get(volume.studyInstanceUID);
+			pairs.push({ volume, fundus });
+		}
+
+		if (pairs.length === 0) {
+			showError("Missing volumes", "Fundus images require a matching volume with the same StudyInstanceUID.");
+
+			return;
+		}
+
+		setDicomPairs(pairs);
+		showSuccess("DICOM files loaded successfully", `${pairs.length} volume file(s) loaded.`);
 	};
 
 	return (

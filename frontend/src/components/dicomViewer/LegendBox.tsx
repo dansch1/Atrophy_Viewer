@@ -1,7 +1,7 @@
 import { useViewer } from "@/context/ViewerStateProvider";
 
 export const LegendBox = () => {
-	const { selectedModel, models, showAnnotations, selectedLabelColors } = useViewer();
+	const { models, selectedModel, showAnnotations, selectedLabelColors } = useViewer();
 
 	if (!selectedModel || !showAnnotations) {
 		return null;
