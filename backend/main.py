@@ -1,23 +1,20 @@
 import asyncio
+import os
 import random
 import threading
-from typing import List, Dict, Callable
-
-import os
-import torch
-from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-
-from torchvision import transforms
-from PIL import Image
+from typing import List, Dict
 
 import pydicom
-from pydicom.filebase import DicomBytesIO
-
+import torch
+from PIL import Image
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from ic_detr.infer import infer_intervals
+from ic_detr.model import build_ic_detr
 from pydantic import BaseModel
-
-from ic_detr.ic_detr import build_ic_detr
+from pydicom.filebase import DicomBytesIO
+from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+from torchvision import transforms
 
 app = FastAPI()
 app.add_middleware(
@@ -195,194 +192,57 @@ def _dicom_to_images(raw: bytes) -> (List[Image.Image], int):
     return images, cols
 
 
-def nms_1d(boxes: torch.Tensor, scores: torch.Tensor, iou_thresh: float, cover_thresh: float | None):
-    # boxes: [N,2] in [0,1]
-    if boxes.numel() == 0:
-        return torch.zeros(0, dtype=torch.long, device=boxes.device)
-
-    x0 = torch.minimum(boxes[:, 0], boxes[:, 1])
-    x1 = torch.maximum(boxes[:, 0], boxes[:, 1])
-    order = torch.argsort(scores, descending=True)
-    keep = []
-    use_cov = (cover_thresh is not None) and (cover_thresh > 0.0)
-
-    while order.numel() > 0:
-        i = int(order[0])
-        keep.append(i)
-        if order.numel() == 1:
-            break
-
-        rest = order[1:]
-        r0, r1 = x0[rest], x1[rest]
-        b0, b1 = x0[i], x1[i]
-
-        inter = (torch.minimum(b1, r1) - torch.maximum(b0, r0)).clamp(min=0.0)
-        len_i = (b1 - b0).clamp(min=1e-6)
-        len_r = (r1 - r0).clamp(min=1e-6)
-        union = len_i + len_r - inter
-        iou = inter / union
-
-        if use_cov:
-            cover_ir = inter / len_r  # i covers rest
-            cover_ri = inter / len_i  # rest covers i
-            mask = (iou <= iou_thresh) & ((cover_ir <= cover_thresh) | (cover_ri <= cover_thresh))
-        else:
-            mask = (iou <= iou_thresh)
-
-        order = rest[mask]
-
-    return torch.as_tensor(keep, dtype=torch.long, device=boxes.device)
-
-
-def select_non_overlapping_intervals(boxes: torch.Tensor,
-                                     scores: torch.Tensor,
-                                     weight_by_length: bool = False,
-                                     eps: float = 1e-6) -> torch.Tensor:
-    device = boxes.device
-    if boxes.numel() == 0:
-        return torch.zeros(0, dtype=torch.long, device=device)
-
-    x0 = torch.minimum(boxes[:, 0], boxes[:, 1])
-    x1 = torch.maximum(boxes[:, 0], boxes[:, 1])
-    length = (x1 - x0).clamp_min(0)
-
-    w = scores
-    if weight_by_length:
-        w = w * length
-
-    # sort by end coordinate
-    order = torch.argsort(x1)
-    x0_s, x1_s, w_s = x0[order], x1[order], w[order]
-
-    # p[i]: rightmost interval ending before i starts
-    ends = x1_s.cpu()
-    starts = (x0_s - eps).cpu()
-    p = torch.searchsorted(ends, starts).to(torch.long) - 1  # [-1..i-1]
-
-    N = x0_s.numel()
-    dp = torch.zeros(N + 1, dtype=torch.float32)
-    choose = torch.zeros(N, dtype=torch.bool)
-    for i in range(1, N + 1):
-        take = w_s[i - 1].cpu() + (dp[p[i - 1] + 1] if p[i - 1] >= 0 else 0.0)
-        skip = dp[i - 1]
-        if take >= skip:
-            dp[i] = take
-            choose[i - 1] = True
-        else:
-            dp[i] = skip
-
-    # backtrack
-    idx = []
-    i = N - 1
-    while i >= 0:
-        if choose[i]:
-            idx.append(i)
-            i = p[i].item()
-        else:
-            i -= 1
-
-    idx = torch.tensor(list(reversed(idx)), dtype=torch.long)
-    return order[idx].to(device)
-
-
 @torch.no_grad()
-def _infer_ic_detr(lm, images: List[Image.Image], cols_px: int, should_cancel: Callable[[], bool] = lambda: False):
-    def _check():
-        if should_cancel():
-            raise asyncio.CancelledError()
-
+def _infer_ic_detr(lm: LoadedModel, images: List[Image.Image], cols_px: int, should_cancel=lambda: False):
     device = lm.device
     model = lm.model.eval()
-
-    N = len(images)
-    volume_annotations: List[List[List[float]]] = [None] * N
-
+    tfm = lm.transform
     K = lm.num_classes
-    thr = float(lm.meta.get("score_thresh", 0.05))
-    pcs = lm.meta.get("class_score_thresh")
-    decode_cfg = lm.meta.get("decode", {"method": "nms"})
-    method = decode_cfg.get("method", "nms")
-    nms_iou = lm.meta.get("nms_iou")
-    nms_cover = lm.meta.get("nms_cover")
-    topk = lm.meta.get("topk")
 
-    for i, img in enumerate(images):
-        _check()
+    meta = lm.meta
+    decode_cfg = meta.get("decode", {"method": "wis"})
+    method = decode_cfg.get("method", "wis")
+    wis_weight = bool(decode_cfg.get("wis_weight_by_length", False))
+    wis_global = bool(decode_cfg.get("wis_global", True))
+    nms_iou = meta.get("nms_iou")
+    nms_cover = meta.get("nms_cover")
+    score_thr = float(meta.get("score_thresh", 0.05))
+    class_thr = meta.get("class_score_thresh")
+    topk = meta.get("topk")
 
-        x = lm.transform(img)  # [C,H,W]
-        x = x.unsqueeze(0)  # [1,C,H,W]
-        x = x.pin_memory().to(device, non_blocking=True) if device.type == "cuda" else x.to(device)
+    if class_thr is not None:
+        class_thr = torch.tensor(class_thr, dtype=torch.float32)
 
-        _check()
-        out = model(x)
-        _check()
+    BATCH = 8
+    volume: List[List[List[float]]] = []
+    for s in range(0, len(images), BATCH):
+        if should_cancel():
+            raise asyncio.CancelledError()
+        chunk = images[s:s + BATCH]
+        x = torch.stack([tfm(im) for im in chunk], dim=0)  # [b,3,H,W]
 
-        probs = out["pred_logits"].softmax(-1)[0]  # [Q,K+1]
-        boxes = out["pred_intervals"].clamp(0, 1)[0]  # [Q,2]
-        class_probs = probs[:, :K]
-        p_eos = probs[:, -1]
-        scores, labels = class_probs.max(dim=-1)
-        scores = scores * (1.0 - p_eos)
+        preds = infer_intervals(
+            model, x, device, K,
+            score_thresh=score_thr,
+            class_score_thresh=class_thr,
+            topk=topk,
+            decode=method,
+            nms_iou=nms_iou,
+            nms_cover=nms_cover,
+            wis_weight_by_length=wis_weight,
+            merge_gap=0.0,
+            merge_iou=0.6,
+        )
 
-        if pcs is not None:
-            pcs_t = torch.tensor(pcs, device=boxes.device, dtype=boxes.dtype)
-            keep = scores >= pcs_t[labels]
-        else:
-            keep = scores >= thr
+        for p in preds:
+            anns = [[float(d["x0"] * cols_px), float(d["x1"] * cols_px), int(d["label"])] for d in p]
+            volume.append(anns)
 
-        scores_i = scores[keep]
-        labels_i = labels[keep]
-        boxes_i = boxes[keep]
-
-        if scores_i.numel() > 0:
-            if method == "wis":
-                wis_weight = bool(decode_cfg.get("wis_weight_by_length", False))
-                wis_global = bool(decode_cfg.get("wis_global", False))
-                if wis_global or K == 1:
-                    sel = select_non_overlapping_intervals(boxes_i, scores_i, weight_by_length=wis_weight)
-                    scores_i, labels_i, boxes_i = scores_i[sel], labels_i[sel], boxes_i[sel]
-                else:
-                    keep_idx_all = []
-                    for c in range(K):
-                        m = (labels_i == c)
-                        if m.any():
-                            sel = select_non_overlapping_intervals(boxes_i[m], scores_i[m], weight_by_length=wis_weight)
-                            keep_idx_all.append(torch.nonzero(m, as_tuple=False).squeeze(1)[sel])
-                    if keep_idx_all:
-                        keep_idx = torch.cat(keep_idx_all, dim=0)
-                        scores_i, labels_i, boxes_i = scores_i[keep_idx], labels_i[keep_idx], boxes_i[keep_idx]
-            elif method == "nms":
-                if nms_iou is not None and isinstance(nms_iou, (int, float)) and nms_iou > 0:
-                    keep_idx_all = []
-                    for c in range(K):
-                        m = (labels_i == c)
-                        if m.any():
-                            idx_local = nms_1d(boxes_i[m], scores_i[m], float(nms_iou), nms_cover)
-                            keep_idx_all.append(torch.nonzero(m, as_tuple=False).squeeze(1)[idx_local])
-                    if keep_idx_all:
-                        keep_idx = torch.cat(keep_idx_all, dim=0)
-                        scores_i, labels_i, boxes_i = scores_i[keep_idx], labels_i[keep_idx], boxes_i[keep_idx]
-            else:
-                raise RuntimeError(f"Unknown decode method: {method}")
-
-        if isinstance(topk, int) and 0 < topk < scores_i.numel():
-            order = torch.argsort(scores_i, descending=True)[:topk]
-            scores_i = scores_i[order]
-            labels_i = labels_i[order]
-            boxes_i = boxes_i[order]
-
-        x0 = (boxes_i[:, 0] * cols_px).tolist()
-        x1 = (boxes_i[:, 1] * cols_px).tolist()
-        cls = labels_i.tolist()
-        volume_annotations[i] = [[float(a), float(b), int(c)] for a, b, c in zip(x0, x1, cls)]
-
-        _check()
-
-    return volume_annotations
+    return volume
 
 
-@app.get("/models", response_model=List[ModelData])
-def list_models():
+@app.get("/models", response_model=Dict[str, List[str]])
+def get_models():
     if not os.path.isdir(MODELS_DIR):
         raise HTTPException(status_code=500, detail=f"Models directory '{MODELS_DIR}' not found.")
 
@@ -390,7 +250,7 @@ def list_models():
     if not model_files:
         raise HTTPException(status_code=404, detail="No model files found.")
 
-    models: List[ModelData] = []
+    models: Dict[str, List[str]] = {}
     for filename in model_files:
         try:
             ckpt = torch.load(os.path.join(MODELS_DIR, filename), map_location="cpu")
@@ -400,7 +260,7 @@ def list_models():
             if not isinstance(classes, list):
                 raise ValueError("Missing or invalid 'classes' in checkpoint.")
 
-            models.append(ModelData(name=filename, classes=classes))
+            models[filename] = classes
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error loading model '{filename}': {str(e)}")
 
@@ -473,13 +333,15 @@ async def annotate_dicom(
     watcher = asyncio.create_task(watch_disconnect())
 
     try:
-        return await asyncio.to_thread(
+        result = await asyncio.to_thread(
             _infer_ic_detr,
             lm,
             frames,
             cols,
             cancel_event.is_set
         )
+
+        return result
     except asyncio.CancelledError:
         if torch.cuda.is_available():
             torch.cuda.synchronize()

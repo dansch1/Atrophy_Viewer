@@ -10,13 +10,14 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useViewer } from "@/context/ViewerStateProvider";
 import { useDarkMode } from "@/hooks/useDarkMode";
-import { DEFAULT_LABEL_COLOR } from "@/lib/labelColors";
+import { DEFAULT_LABEL_COLOR } from "@/lib/modelColors";
 import { rafThrottle } from "@/lib/utils";
 import { ChevronDown, ChevronRight, Moon, Settings, Sun } from "lucide-react";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 export function SettingsDialog() {
-	const { models, showFilenames, setShowFilenames, modelColors, setModelColors } = useViewer();
+	const { models, showDates, setShowDates, showFilenames, setShowFilenames, modelColors, setModelColors } =
+		useViewer();
 
 	const [isOpen, setIsOpen] = useState(false);
 	const { isDark, setIsDark } = useDarkMode();
@@ -31,15 +32,21 @@ export function SettingsDialog() {
 
 	const handleColorChange = useMemo(
 		() =>
-			rafThrottle((model: string, cls: string, color: string) => {
+			rafThrottle((model: string, label: string, color: string) => {
 				setModelColors((prev) => {
 					const updated = { ...prev };
-					updated[model]?.setColorByLabel(cls, color);
+					updated[model]?.setColorByLabel(label, color);
 					return updated;
 				});
 			}),
 		[setModelColors]
 	);
+
+	useEffect(() => {
+		return () => {
+			handleColorChange.cancel();
+		};
+	}, [handleColorChange]);
 
 	return (
 		<Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -64,36 +71,37 @@ export function SettingsDialog() {
 					</span>
 					<Switch id="theme-toggle" checked={isDark} onCheckedChange={setIsDark} />
 
+					<span className="text-muted-foreground">Show Dates</span>
+					<Switch id="filenames-toggle" checked={showDates} onCheckedChange={setShowDates} />
+
 					<span className="text-muted-foreground">Show Filenames</span>
 					<Switch id="filenames-toggle" checked={showFilenames} onCheckedChange={setShowFilenames} />
 
 					{/* Section: Legend */}
 					<h4 className="col-span-2 text-sm font-semibold text-foreground mt-4 mb-2">Legend</h4>
 
-					{models.map((model) => (
-						<React.Fragment key={model.name}>
+					{[...models].map(([name, labels]) => (
+						<React.Fragment key={name}>
 							<button
-								onClick={() => toggleModel(model.name)}
+								onClick={() => toggleModel(name)}
 								className="col-span-2 w-full flex items-center justify-between text-muted-foreground hover:text-foreground transition cursor-pointer"
 							>
-								<span className="font-medium text-left">{model.name}</span>
-								{expandedModels[model.name] ? (
+								<span className="font-medium text-left">{name}</span>
+								{expandedModels[name] ? (
 									<ChevronDown className="w-4 h-4" />
 								) : (
 									<ChevronRight className="w-4 h-4" />
 								)}
 							</button>
 
-							{expandedModels[model.name] &&
-								model.classes.map((cls) => (
-									<React.Fragment key={`${model.name}-${cls}`}>
-										<span className="text-muted-foreground ml-4">{cls}</span>
+							{expandedModels[name] &&
+								labels.map((label) => (
+									<React.Fragment key={`${name}-${label}`}>
+										<span className="text-muted-foreground ml-4">{label}</span>
 										<input
 											type="color"
-											value={modelColors[model.name]?.getColorByLabel(cls) ?? DEFAULT_LABEL_COLOR}
-											onChange={(e) => {
-												handleColorChange(model.name, cls, e.target.value);
-											}}
+											value={modelColors[name]?.getColorByLabel(label) ?? DEFAULT_LABEL_COLOR}
+											onChange={(e) => handleColorChange(name, label, e.target.value)}
 											className="w-10 h-6 border rounded"
 										/>
 									</React.Fragment>

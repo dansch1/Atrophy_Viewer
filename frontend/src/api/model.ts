@@ -1,16 +1,13 @@
 import { z } from "zod";
 import { fetchWithTimeout } from "./http";
 
-export const ModelDataSchema = z.object({
-	name: z.string(),
-	classes: z.array(z.string()),
-});
+export const ModelMapSchema = z
+	.record(z.string(), z.array(z.string()))
+	.transform((rec) => new Map<string, string[]>(Object.entries(rec)));
 
-export const ModelListSchema = z.array(ModelDataSchema);
+export type ModelMap = z.infer<typeof ModelMapSchema>;
 
-export type ModelData = z.infer<typeof ModelDataSchema>;
-
-export async function fetchModels(): Promise<ModelData[]> {
+export async function fetchModels(): Promise<ModelMap> {
 	const response = await fetchWithTimeout(`${import.meta.env.VITE_API_BASE}/models`);
 
 	if (!response.ok) {
@@ -20,5 +17,5 @@ export async function fetchModels(): Promise<ModelData[]> {
 
 	const data = await response.json();
 
-	return ModelListSchema.parse(data);
+	return ModelMapSchema.parse(data);
 }

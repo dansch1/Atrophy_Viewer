@@ -15,7 +15,7 @@ const FundusViewer: React.FC = () => {
 		selectedVolumeAnnotations,
 		showAnnotations,
 		showFilenames,
-		selectedLabelColors,
+		selectedModelColors,
 	} = useViewer();
 
 	const imgCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -95,7 +95,7 @@ const FundusViewer: React.FC = () => {
 										selectedVolume.slicePositions,
 										selectedVolume.cols
 									);
-									const color = selectedLabelColors.getColorByIndex(cls);
+									const color = selectedModelColors.getColorByIndex(cls);
 
 									return (
 										<polygon

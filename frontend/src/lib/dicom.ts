@@ -1,8 +1,14 @@
+import type { Laterality } from "@/hooks/useViewerState";
 import * as dicomParser from "dicom-parser";
 
 type DicomDataBase = {
 	file: File;
+	patientID: string;
 	studyInstanceUID: string;
+	sopInstanceUID: string;
+	patientName?: string;
+	laterality: Laterality;
+	acquisitionDate: Date;
 	rows: number;
 	cols: number;
 	frames: number;
@@ -36,19 +42,55 @@ export async function getDicomData(file: File): Promise<DicomData> {
 	const dataSet = dicomParser.parseDicom(new Uint8Array(arrayBuffer));
 
 	const sopClassUID = dataSet.string("x00080016");
+	const patientID = dataSet.string("x00100020");
 	const studyInstanceUID = dataSet.string("x0020000d");
+	const sopInstanceUID = dataSet.string("x00080018");
+
+	const patientName = dataSet.string("x00100010")?.replace("^", ", ").trim();
+	const laterality = dataSet.string("x00200062")?.toUpperCase() as Laterality;
+	const acquisitionDate: Date | undefined = (() => {
+		const s = dataSet.string("x00080022") ?? dataSet.string("x0008002a")?.slice(0, 8);
+		return s && /^\d{8}$/.test(s) ? new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)) : undefined;
+	})();
 
 	const rows = dataSet.uint16("x00280010");
 	const cols = dataSet.uint16("x00280011");
-	const frames = dataSet.intString("x00280008") || 1;
+	const frames = dataSet.intString("x00280008") ?? 1;
+	const bitsAllocated = dataSet.uint16("x00280100");
 
 	const pixelDataElement = dataSet.elements.x7fe00010;
 
-	if (!sopClassUID || !studyInstanceUID || !rows || !cols || !pixelDataElement) {
+	if (
+		!sopClassUID ||
+		!patientID ||
+		!studyInstanceUID ||
+		!sopInstanceUID ||
+		!laterality ||
+		!acquisitionDate ||
+		!rows ||
+		!cols ||
+		!pixelDataElement
+	) {
 		throw new Error(`Missing required data in file: ${file.name}`);
 	}
 
-	const pixelData = new Uint8Array(dataSet.byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
+	const base = {
+		file,
+		patientID,
+		patientName,
+		studyInstanceUID,
+		sopInstanceUID,
+		laterality,
+		acquisitionDate,
+		rows,
+		cols,
+		frames,
+	};
+
+	const pixelData =
+		bitsAllocated === 16
+			? new Uint16Array(dataSet.byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length / 2)
+			: new Uint8Array(dataSet.byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
 
 	if (sopClassUID === UID_VOLUME) {
 		const images: ImageData[] = [];
@@ -62,11 +104,7 @@ export async function getDicomData(file: File): Promise<DicomData> {
 
 		return {
 			type: "volume",
-			file,
-			studyInstanceUID,
-			rows,
-			cols,
-			frames,
+			...base,
 			images,
 			slicePositions,
 		};
@@ -77,11 +115,7 @@ export async function getDicomData(file: File): Promise<DicomData> {
 
 		return {
 			type: "fundus",
-			file,
-			studyInstanceUID,
-			rows,
-			cols,
-			frames,
+			...base,
 			image,
 		};
 	}
@@ -89,20 +123,31 @@ export async function getDicomData(file: File): Promise<DicomData> {
 	throw new Error(`DICOM file could not be classified: ${file.name}`);
 }
 
-function pixelsForFrame(pixelData: Uint8Array, frame: number, rows: number, cols: number) {
+function pixelsForFrame(pixelData: Uint8Array | Uint16Array, frame: number, rows: number, cols: number) {
 	const size = rows * cols;
 	const start = frame * size;
 	return pixelData.subarray(start, start + size);
 }
 
-function normalizeDicom(pixelData: Uint8Array, cols: number, rows: number): ImageData {
+function normalizeDicom(pixelData: Uint8Array | Uint16Array, cols: number, rows: number): ImageData {
 	const imageData = new ImageData(cols, rows);
 
-	const min = pixelData.reduce((m, v) => (v < m ? v : m), Infinity);
-	const max = pixelData.reduce((m, v) => (v > m ? v : m), -Infinity);
+	let min = Infinity;
+	let max = -Infinity;
+	for (let i = 0; i < pixelData.length; i++) {
+		const v = pixelData[i] as number;
 
+		if (v < min) {
+			min = v;
+		}
+		if (v > max) {
+			max = v;
+		}
+	}
+
+	const range = max - min || 1;
 	for (let i = 0; i < cols * rows; i++) {
-		const val = Math.round(((pixelData[i] - min) / (max - min)) * 255);
+		const val = Math.round(((pixelData[i] - min) / range) * 255);
 
 		imageData.data[i * 4 + 0] = val;
 		imageData.data[i * 4 + 1] = val;

@@ -7,7 +7,7 @@ import SliceViewer from "./SliceViewer";
 import { ZoomControls } from "./ZoomControls";
 
 const DicomViewer: React.FC = () => {
-	const { selectedVolume, selectedSlice, setSelectedSlice } = useViewer();
+	const { selectedVolume, selectedSlice, setSelectedSlice, showDates } = useViewer();
 
 	const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
 		if (!selectedVolume || selectedSlice === null) {
@@ -27,6 +27,12 @@ const DicomViewer: React.FC = () => {
 			<TransformWrapper centerOnInit minScale={0.5} maxScale={5} wheel={{ activationKeys: ["Control", "Meta"] }}>
 				<LegendBox />
 				<ZoomControls />
+
+				{showDates && selectedVolume && (
+					<div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1 bg-background rounded-md border shadow text-sm md:text-base font-medium">
+						{selectedVolume.acquisitionDate.toDateString()}
+					</div>
+				)}
 
 				<div className="flex items-center justify-center w-full h-full">
 					<TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full">

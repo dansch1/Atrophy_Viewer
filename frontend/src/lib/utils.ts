@@ -35,7 +35,7 @@ export function rafThrottle<T extends (...args: any[]) => void>(fn: T) {
 		});
 	};
 
-	(throttled as any).cancel = () => {
+	throttled.cancel = () => {
 		if (rafId != null) {
 			cancelAnimationFrame(rafId);
 		}

@@ -12,7 +12,7 @@ const SliceViewer: React.FC = () => {
 		selectedSliceAnnotations,
 		showAnnotations,
 		showFilenames,
-		selectedLabelColors,
+		selectedModelColors,
 	} = useViewer();
 
 	const imgCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -37,7 +37,7 @@ const SliceViewer: React.FC = () => {
 			<div className="relative">
 				<canvas ref={imgCanvasRef} />
 
-				<div className="absolute top-2 left-3 text-sm text-center text-green-500">
+				<div className="absolute top-2 left-3 z-5 text-sm text-center text-green-500">
 					{`${selectedSlice + 1} / ${selectedVolume.frames}`}
 				</div>
 
@@ -49,7 +49,7 @@ const SliceViewer: React.FC = () => {
 							}
 
 							const width = x1 - x0;
-							const color = selectedLabelColors.getColorByIndex(cls);
+							const color = selectedModelColors.getColorByIndex(cls);
 
 							return (
 								<rect

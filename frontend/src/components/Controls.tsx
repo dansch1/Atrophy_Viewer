@@ -1,62 +1,87 @@
 import { fetchAnnotations } from "@/api/annotation";
 import { Button } from "@/components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useViewer } from "@/context/ViewerStateProvider";
+import type { Laterality } from "@/hooks/useViewerState";
 import { showError, showInfo, showSuccess } from "@/lib/toast";
-import { ChevronLeft, ChevronRight, Image, List, Pause, Play, Square, SquareSplitVertical } from "lucide-react";
+import {
+	BarChart3,
+	ChevronLeft,
+	ChevronRight,
+	Image,
+	List,
+	Pause,
+	Play,
+	Square,
+	SquareSplitVertical,
+} from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 
 const Controls: React.FC = () => {
 	const {
 		dicomPairs,
+		patientInfo,
+		selectedPatient,
+		setSelectedPatient,
+		selectedLaterality,
+		setSelectedLaterality,
+		currentPairs,
 		selectedPair,
 		setSelectedPair,
+		selectedVolume,
 		selectedFundus,
-		setSelectedSlice,
-		models,
-		selectedModel,
-		setSelectedModel,
 		viewMode,
 		setViewMode,
 		showSlices,
 		setShowSlices,
+		models,
+		selectedModel,
+		setSelectedModel,
 		annotations,
 		setAnnotations,
 		loadingAnnotations,
 		setLoadingAnnotations,
 		showAnnotations,
 		setShowAnnotations,
+		showStats,
+		setShowStats,
 	} = useViewer();
 
 	const [isPlaying, setIsPlaying] = useState(false);
+	const [annotateMenuOpen, setAnnotateMenuOpen] = useState(false);
+
 	const abortControllers = useRef<AbortController[]>([]);
 
-	useEffect(() => {
-		setShowAnnotations(false);
-		cancelAllRequests();
+	const hasSelection = selectedVolume && selectedModel;
+	const canAnnotate = hasSelection && !loadingAnnotations.get(selectedModel)?.has(selectedVolume.sopInstanceUID);
+	const hasAnnotationForCurrent = hasSelection && annotations.get(selectedModel)?.has(selectedVolume.sopInstanceUID);
 
-		resetViewer();
+	useEffect(() => {
+		cancelAllRequests();
+		setAnnotations(new Map());
+		setLoadingAnnotations(new Map());
 	}, [dicomPairs]);
 
 	useEffect(() => {
-		setShowAnnotations(false);
 		cancelAllRequests();
+		setShowAnnotations(false);
 	}, [selectedModel]);
 
 	useEffect(() => {
 		if (showAnnotations) {
 			tryFetchAnnotations(selectedPair);
 		}
-	}, [selectedPair, annotations]);
-
-	const resetViewer = () => {
-		setSelectedPair(0);
-		setSelectedSlice(0);
-		setViewMode("slice");
-		setShowSlices(false);
-		setAnnotations(new Map());
-	};
+	}, [selectedPair, showAnnotations]);
 
 	const tryFetchAnnotations = async (index: number) => {
 		if (!selectedModel) {
@@ -64,26 +89,31 @@ const Controls: React.FC = () => {
 			return false;
 		}
 
-		if (annotations.get(selectedModel)?.has(index)) {
-			return true;
-		}
+		const volume = currentPairs[index]?.volume;
 
-		if (loadingAnnotations.get(selectedModel)?.has(index)) {
+		if (!volume) {
+			showError("No volume file selected", "Please select a valid DICOM volume file before toggling annotation.");
 			return false;
 		}
 
-		const file = dicomPairs[index]?.volume.file;
+		const key = volume.sopInstanceUID;
+		const file = volume.file;
 
-		if (!file) {
-			showError("No volume file selected", "Please select a valid DICOM volume file before toggling annotation.");
+		if (annotations.get(selectedModel)?.has(key)) {
+			return true;
+		}
+
+		if (loadingAnnotations.get(selectedModel)?.has(key)) {
 			return false;
 		}
 
 		setLoadingAnnotations((prev) => {
 			const next = new Map(prev);
 			const set = new Set(next.get(selectedModel) ?? []);
-			set.add(index);
+
+			set.add(key);
 			next.set(selectedModel, set);
+
 			return next;
 		});
 
@@ -96,8 +126,10 @@ const Controls: React.FC = () => {
 			setAnnotations((prev) => {
 				const next = new Map(prev);
 				const perModel = new Map(next.get(selectedModel) ?? []);
-				perModel.set(index, data);
+
+				perModel.set(key, data);
 				next.set(selectedModel, perModel);
+
 				return next;
 			});
 
@@ -116,8 +148,10 @@ const Controls: React.FC = () => {
 			setLoadingAnnotations((prev) => {
 				const next = new Map(prev);
 				const set = new Set(next.get(selectedModel) ?? []);
-				set.delete(index);
+
+				set.delete(volume.sopInstanceUID);
 				next.set(selectedModel, set);
+
 				return next;
 			});
 
@@ -130,20 +164,44 @@ const Controls: React.FC = () => {
 		abortControllers.current = [];
 	};
 
-	const toggleAnnotations = () => {
-		if (showAnnotations) {
-			setShowAnnotations(false);
-			return;
-		}
-
-		setShowAnnotations(true);
-		tryFetchAnnotations(selectedPair);
-	};
-
 	return (
 		<footer className="relative grid grid-cols-3 items-center p-4 bg-accent">
-			<div className="justify-self-start text-sm">
-				{dicomPairs.length > 0 ? `File: ${selectedPair + 1} / ${dicomPairs.length}` : "No files selected"}
+			<div className="justify-self-start flex gap-2">
+				<Select value={selectedPatient ?? ""} onValueChange={setSelectedPatient}>
+					<SelectTrigger className="w-50 bg-background">
+						<SelectValue placeholder="Select patient" />
+					</SelectTrigger>
+					<SelectContent>
+						{patientInfo.size === 0 ? (
+							<SelectItem value="__none__" disabled>
+								No patients
+							</SelectItem>
+						) : (
+							[...patientInfo].map(([pid, name]) => (
+								<SelectItem key={pid} value={pid}>
+									{name}
+								</SelectItem>
+							))
+						)}
+					</SelectContent>
+				</Select>
+
+				<Tabs value={selectedLaterality} onValueChange={(v) => setSelectedLaterality(v as Laterality)}>
+					<TabsList className="grid w-full grid-cols-2">
+						<TabsTrigger
+							value="L"
+							disabled={!selectedPatient || (dicomPairs[selectedPatient]?.L.length ?? 0) === 0}
+						>
+							OS
+						</TabsTrigger>
+						<TabsTrigger
+							value="R"
+							disabled={!selectedPatient || (dicomPairs[selectedPatient]?.R.length ?? 0) === 0}
+						>
+							OD
+						</TabsTrigger>
+					</TabsList>
+				</Tabs>
 			</div>
 
 			<div className="justify-self-center flex gap-2">
@@ -155,122 +213,183 @@ const Controls: React.FC = () => {
 				>
 					<ChevronLeft className="w-4 h-4" />
 				</Button>
+
 				<Button
 					onClick={() => setIsPlaying(!isPlaying)}
 					variant="default"
 					size="icon"
-					disabled={dicomPairs.length < 2}
+					disabled={currentPairs.length < 2}
 				>
 					{isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
 				</Button>
+
 				<Button
 					variant="outline"
 					size="icon"
-					onClick={() => setSelectedPair(Math.min(dicomPairs.length - 1, selectedPair + 1))}
-					disabled={selectedPair >= dicomPairs.length - 1}
+					onClick={() => setSelectedPair(Math.min(currentPairs.length - 1, selectedPair + 1))}
+					disabled={selectedPair >= currentPairs.length - 1}
 				>
 					<ChevronRight className="w-4 h-4" />
 				</Button>
 			</div>
 
 			<div className="justify-self-end flex gap-2">
-				<div>
-					<Select value={selectedModel ?? ""} onValueChange={setSelectedModel}>
-						<SelectTrigger className="w-50 bg-background">
-							<SelectValue placeholder="Select model" />
-						</SelectTrigger>
-						<SelectContent>
-							{models.length === 0 ? (
-								<SelectItem value="default" disabled>
-									No models available
-								</SelectItem>
+				<Tooltip delayDuration={1000}>
+					<TooltipTrigger asChild>
+						<Button
+							variant="outline"
+							size="icon"
+							onClick={() =>
+								setViewMode(viewMode === "slice" ? "fundus" : viewMode === "fundus" ? "both" : "slice")
+							}
+							disabled={currentPairs.length === 0}
+						>
+							{viewMode === "fundus" ? (
+								<Image className="w-4 h-4" />
+							) : viewMode === "slice" ? (
+								<Square className="w-4 h-4" />
 							) : (
-								models.map((model) => {
-									const name = model.name.replace(/\.[^/.]+$/, "");
-
-									return (
-										<SelectItem key={model.name} value={model.name}>
-											{name}
-										</SelectItem>
-									);
-								})
+								<SquareSplitVertical className="w-4 h-4 transform rotate-90" />
 							)}
-						</SelectContent>
-					</Select>
-				</div>
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>
+						<p>
+							{viewMode === "fundus"
+								? "Mode: Fundus"
+								: viewMode === "slice"
+								? "Mode: Volume"
+								: "Mode: Fundus & Volume"}
+						</p>
+					</TooltipContent>
+				</Tooltip>
 
-				<TooltipProvider>
-					<Tooltip delayDuration={500}>
-						<TooltipTrigger asChild>
-							<Button
-								variant="outline"
-								size="icon"
-								onClick={() =>
-									setViewMode(
-										viewMode === "fundus" ? "slice" : viewMode === "slice" ? "both" : "fundus"
-									)
-								}
-							>
-								{viewMode === "fundus" ? (
-									<Image className="w-4 h-4" />
-								) : viewMode === "slice" ? (
-									<Square className="w-4 h-4" />
-								) : (
-									<SquareSplitVertical className="w-4 h-4 transform rotate-90" />
-								)}
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent>
-							<p>
-								{viewMode === "fundus"
-									? "Show Fundus"
-									: viewMode === "slice"
-									? "Show Volume"
-									: "Show Fundus & Volume"}
-							</p>
-						</TooltipContent>
-					</Tooltip>
-				</TooltipProvider>
+				<Tooltip delayDuration={1000}>
+					<TooltipTrigger asChild>
+						<Button
+							variant={showSlices ? "default" : "outline"}
+							size="icon"
+							onClick={() => setShowSlices(!showSlices)}
+							disabled={!selectedFundus || viewMode === "slice"}
+						>
+							<List className="w-4 h-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>
+						<p>{showSlices ? "Hide slices" : "Show slices"}</p>
+					</TooltipContent>
+				</Tooltip>
 
-				<TooltipProvider>
-					<Tooltip delayDuration={500}>
-						<TooltipTrigger asChild>
-							<Button
-								variant={showSlices ? "default" : "outline"}
-								size="icon"
-								onClick={() => setShowSlices(!showSlices)}
-								disabled={!selectedFundus || viewMode === "slice"}
-							>
-								<List className="w-4 h-4" />
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent>
-							<p>Show slices</p>
-						</TooltipContent>
-					</Tooltip>
-				</TooltipProvider>
+				<Select value={selectedModel ?? ""} onValueChange={setSelectedModel}>
+					<SelectTrigger className="w-50 bg-background">
+						<SelectValue placeholder="Select model" />
+					</SelectTrigger>
+					<SelectContent>
+						{models.size === 0 ? (
+							<SelectItem value="__none__" disabled>
+								No models available
+							</SelectItem>
+						) : (
+							[...models.keys()].map((name) => {
+								const displayName = name.replace(/\.[^/.]+$/, "");
+								return (
+									<SelectItem key={name} value={name}>
+										{displayName}
+									</SelectItem>
+								);
+							})
+						)}
+					</SelectContent>
+				</Select>
 
-				<TooltipProvider>
-					<Tooltip delayDuration={500}>
+				{hasAnnotationForCurrent ? (
+					<Tooltip delayDuration={1000}>
 						<TooltipTrigger asChild>
 							<Button
 								variant={showAnnotations ? "default" : "outline"}
 								size="icon"
-								onClick={toggleAnnotations}
-								disabled={
-									!dicomPairs[selectedPair] ||
-									!selectedModel ||
-									!!loadingAnnotations.get(selectedModel)?.has(selectedPair)
-								}
+								onClick={() => setShowAnnotations(!showAnnotations)}
+								disabled={!canAnnotate}
 							>
 								<Image className="w-4 h-4" />
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent>
-							<p>Show annotations</p>
+							<p>{showAnnotations ? "Hide annotations" : "Show annotations"}</p>
 						</TooltipContent>
 					</Tooltip>
-				</TooltipProvider>
+				) : (
+					<Tooltip delayDuration={1000}>
+						<DropdownMenu open={annotateMenuOpen} onOpenChange={setAnnotateMenuOpen}>
+							<DropdownMenuTrigger asChild>
+								<TooltipTrigger asChild>
+									<Button
+										variant={showAnnotations ? "default" : "outline"}
+										size="icon"
+										onClick={(e) => {
+											e.preventDefault();
+											setAnnotateMenuOpen(true);
+										}}
+										disabled={!canAnnotate}
+									>
+										<Image className="w-4 h-4" />
+									</Button>
+								</TooltipTrigger>
+							</DropdownMenuTrigger>
+
+							<DropdownMenuContent align="end">
+								<DropdownMenuLabel>Annotations</DropdownMenuLabel>
+								<DropdownMenuSeparator />
+								<DropdownMenuItem
+									onClick={async () => {
+										setAnnotateMenuOpen(false);
+										setShowAnnotations(true);
+
+										await tryFetchAnnotations(selectedPair);
+									}}
+								>
+									Annotate current
+								</DropdownMenuItem>
+								<DropdownMenuItem
+									onClick={async () => {
+										setAnnotateMenuOpen(false);
+										setShowAnnotations(true);
+
+										const pending = currentPairs
+											.map((p, i) => ({ i, key: p.volume.sopInstanceUID }))
+											.filter(({ key }) => !annotations.get(selectedModel!)?.has(key))
+											.filter(({ key }) => !loadingAnnotations.get(selectedModel!)?.has(key))
+											.map(({ i }) => i);
+
+										await Promise.allSettled(pending.map((i) => tryFetchAnnotations(i)));
+									}}
+								>
+									Annotate all
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
+
+						<TooltipContent>
+							<p>Load annotations</p>
+						</TooltipContent>
+					</Tooltip>
+				)}
+
+				<Tooltip delayDuration={1000}>
+					<TooltipTrigger asChild>
+						<Button
+							variant={showStats ? "default" : "outline"}
+							size="icon"
+							onClick={() => setShowStats(!showStats)}
+							disabled={currentPairs.length === 0}
+						>
+							<BarChart3 className="w-4 h-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>
+						<p>{showStats ? "Hide stats" : "Show stats"}</p>
+					</TooltipContent>
+				</Tooltip>
 			</div>
 		</footer>
 	);

@@ -1,6 +1,6 @@
 export const DEFAULT_LABEL_COLOR: string = "#000000";
 
-export class LabelColors {
+export class ModelColors {
 	private labels: string[];
 	private colors: string[];
 
@@ -55,7 +55,7 @@ export class LabelColors {
 		};
 	}
 
-	static fromJSON(obj: { labels: string[]; colors: string[] }): LabelColors {
-		return new LabelColors(obj.labels, obj.colors);
+	static fromJSON(obj: { labels: string[]; colors: string[] }): ModelColors {
+		return new ModelColors(obj.labels, obj.colors);
 	}
 }

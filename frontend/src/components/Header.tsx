@@ -3,6 +3,7 @@ import { Download, UploadCloud } from "lucide-react";
 import React, { useRef, useState, type DragEvent } from "react";
 
 import { useViewer } from "@/context/ViewerStateProvider";
+import type { DicomPairsByLaterality } from "@/hooks/useViewerState";
 import { getDicomData, type DicomData } from "@/lib/dicom";
 import { showError, showSuccess } from "@/lib/toast";
 import { HelpDialog } from "./dialogs/HelpDialog";
@@ -70,23 +71,44 @@ const Header = () => {
 			}
 		}
 
-		// TODO
+		// TODO: handle multiple files from the same vist
 		const pairs = [];
-		const fundusMap = new Map(fundusFiles.map((f) => [f.studyInstanceUID, f]));
+		const makeKey = (study: string, lat: string) => `${study}-${lat}`;
+		const fundusMap = new Map(fundusFiles.map((f) => [makeKey(f.studyInstanceUID, f.laterality), f]));
 
 		for (const volume of volumeFiles) {
-			const fundus = fundusMap.get(volume.studyInstanceUID);
+			const fundus = fundusMap.get(makeKey(volume.studyInstanceUID, volume.laterality));
 			pairs.push({ volume, fundus });
 		}
 
 		if (pairs.length === 0) {
 			showError("Missing volumes", "Fundus images require a matching volume with the same StudyInstanceUID.");
-
 			return;
 		}
 
-		setDicomPairs(pairs);
-		showSuccess("DICOM files loaded successfully", `${pairs.length} volume file(s) loaded.`);
+		const byPatient: DicomPairsByLaterality = {};
+
+		for (const p of pairs) {
+			const pid = p.volume.patientID;
+			const lat = p.volume.laterality;
+
+			if (!byPatient[pid]) {
+				byPatient[pid] = { L: [], R: [] };
+			}
+
+			byPatient[pid][lat].push(p);
+		}
+
+		for (const scans of Object.values(byPatient)) {
+			scans.L.sort((a, b) => a.volume.acquisitionDate.getTime() - b.volume.acquisitionDate.getTime());
+			scans.R.sort((a, b) => a.volume.acquisitionDate.getTime() - b.volume.acquisitionDate.getTime());
+		}
+
+		setDicomPairs(byPatient);
+
+		const total = pairs.length;
+		const patients = Object.keys(byPatient).length;
+		showSuccess("DICOM files loaded successfully", `${total} scan(s) across ${patients} patient(s).`);
 	};
 
 	return (

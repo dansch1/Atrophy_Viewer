@@ -1,10 +1,8 @@
-import { LabelColors } from "@/lib/labelColors";
+import { ModelColors } from "@/lib/modelColors";
 import { usePersistentState } from "./usePersistentState";
 
-export type ModelColors = Record<string, LabelColors>;
-
 export function usePersistentModelColors(key: string) {
-	return usePersistentState<ModelColors>(
+	return usePersistentState<Record<string, ModelColors>>(
 		key,
 		{},
 		{
@@ -14,10 +12,10 @@ export function usePersistentModelColors(key: string) {
 				),
 			deserialize: (stored) => {
 				const parsed = JSON.parse(stored) as Record<string, { labels: string[]; colors: string[] }>;
-				const result: ModelColors = {};
+				const result: Record<string, ModelColors> = {};
 
-				for (const modelName in parsed) {
-					result[modelName] = LabelColors.fromJSON(parsed[modelName]);
+				for (const [modelName, obj] of Object.entries(parsed)) {
+					result[modelName] = ModelColors.fromJSON(obj);
 				}
 
 				return result;
