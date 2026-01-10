@@ -3,9 +3,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { useViewer } from "@/context/ViewerStateProvider";
 
 export function GlobalLoader() {
-	const { loadingModels, loadingAnnotations } = useViewer();
+	const { loadingModels, loadingPredictions } = useViewer();
 
-	const anyModelLoading = Array.from(loadingAnnotations.values()).some((s) => s.size > 0);
+	const anyModelLoading = Array.from(loadingPredictions.values()).some((s) => s.size > 0);
 	const isLoading = loadingModels || anyModelLoading;
 
 	if (!isLoading) {

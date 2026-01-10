@@ -1,4 +1,4 @@
-import { fetchAnnotations } from "@/api/annotation";
+import { fetchPredictions } from "@/api/prediction";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -47,67 +47,67 @@ const Controls: React.FC = () => {
 		models,
 		selectedModel,
 		setSelectedModel,
-		annotations,
-		setAnnotations,
-		loadingAnnotations,
-		setLoadingAnnotations,
-		showAnnotations,
-		setShowAnnotations,
+		predictions,
+		setPredictions,
+		loadingPredictions,
+		setLoadingPredictions,
+		showPredictions,
+		setShowPredictions,
 		showStats,
 		setShowStats,
 	} = useViewer();
 
 	const [isPlaying, setIsPlaying] = useState(false);
-	const [annotateMenuOpen, setAnnotateMenuOpen] = useState(false);
+	const [predictionMenuOpen, setPredictionMenuOpen] = useState(false);
 
 	const abortControllers = useRef<AbortController[]>([]);
 
 	const hasSelection = selectedVolume && selectedModel;
-	const canAnnotate = hasSelection && !loadingAnnotations.get(selectedModel)?.has(selectedVolume.sopInstanceUID);
-	const hasAnnotationForCurrent = hasSelection && annotations.get(selectedModel)?.has(selectedVolume.sopInstanceUID);
+	const canPredict = hasSelection && !loadingPredictions.get(selectedModel)?.has(selectedVolume.sopInstanceUID);
+	const hasPredictionForCurrent = hasSelection && predictions.get(selectedModel)?.has(selectedVolume.sopInstanceUID);
 
 	useEffect(() => {
 		cancelAllRequests();
-		setAnnotations(new Map());
-		setLoadingAnnotations(new Map());
+		setPredictions(() => new Map());
+		setLoadingPredictions(() => new Map());
 	}, [dicomPairs]);
 
 	useEffect(() => {
 		cancelAllRequests();
-		setShowAnnotations(false);
+		setShowPredictions(false);
 	}, [selectedModel]);
 
 	useEffect(() => {
-		if (showAnnotations) {
-			tryFetchAnnotations(selectedPair);
+		if (showPredictions) {
+			tryFetchPredictions(selectedPair);
 		}
-	}, [selectedPair, showAnnotations]);
+	}, [selectedPair, showPredictions]);
 
-	const tryFetchAnnotations = async (index: number) => {
+	const tryFetchPredictions = async (index: number) => {
 		if (!selectedModel) {
-			showError("No model selected", "Please select a model before toggling annotation.");
+			showError("No model selected", "Please select a model before toggling prediction.");
 			return false;
 		}
 
 		const volume = currentPairs[index]?.volume;
 
 		if (!volume) {
-			showError("No volume file selected", "Please select a valid DICOM volume file before toggling annotation.");
+			showError("No volume file selected", "Please select a valid DICOM volume file before toggling prediction.");
 			return false;
 		}
 
 		const key = volume.sopInstanceUID;
 		const file = volume.file;
 
-		if (annotations.get(selectedModel)?.has(key)) {
+		if (predictions.get(selectedModel)?.has(key)) {
 			return true;
 		}
 
-		if (loadingAnnotations.get(selectedModel)?.has(key)) {
+		if (loadingPredictions.get(selectedModel)?.has(key)) {
 			return false;
 		}
 
-		setLoadingAnnotations((prev) => {
+		setLoadingPredictions((prev) => {
 			const next = new Map(prev);
 			const set = new Set(next.get(selectedModel) ?? []);
 
@@ -121,9 +121,9 @@ const Controls: React.FC = () => {
 		abortControllers.current.push(controller);
 
 		try {
-			const data = await fetchAnnotations(file, selectedModel, controller);
+			const data = await fetchPredictions(file, selectedModel, controller);
 
-			setAnnotations((prev) => {
+			setPredictions((prev) => {
 				const next = new Map(prev);
 				const perModel = new Map(next.get(selectedModel) ?? []);
 
@@ -133,19 +133,19 @@ const Controls: React.FC = () => {
 				return next;
 			});
 
-			showSuccess("Annotation added", `Annotations loaded for file: ${file.name}`);
+			showSuccess("Prediction complete", `Predictions loaded for file: ${file.name}`);
 			return true;
 		} catch (err: any) {
 			if (err.name === "AbortError") {
-				showInfo("Request cancelled", `The annotation request for ${file.name} was cancelled.`);
+				showInfo("Request cancelled", `The prediction request for ${file.name} was cancelled.`);
 			} else {
-				console.error("Annotation request failed", { file, err });
-				showError("Annotation error", "Failed to annotate the volume file. Please try again.");
+				console.error("Prediction request failed", { file, err });
+				showError("Prediction error", "Failed to predict the volume file. Please try again.");
 			}
 
 			return false;
 		} finally {
-			setLoadingAnnotations((prev) => {
+			setLoadingPredictions((prev) => {
 				const next = new Map(prev);
 				const set = new Set(next.get(selectedModel) ?? []);
 
@@ -302,35 +302,35 @@ const Controls: React.FC = () => {
 					</SelectContent>
 				</Select>
 
-				{hasAnnotationForCurrent ? (
+				{hasPredictionForCurrent ? (
 					<Tooltip delayDuration={1000}>
 						<TooltipTrigger asChild>
 							<Button
-								variant={showAnnotations ? "default" : "outline"}
+								variant={showPredictions ? "default" : "outline"}
 								size="icon"
-								onClick={() => setShowAnnotations(!showAnnotations)}
-								disabled={!canAnnotate}
+								onClick={() => setShowPredictions(!showPredictions)}
+								disabled={!canPredict}
 							>
 								<Image className="w-4 h-4" />
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent>
-							<p>{showAnnotations ? "Hide annotations" : "Show annotations"}</p>
+							<p>{showPredictions ? "Hide predictions" : "Show predictions"}</p>
 						</TooltipContent>
 					</Tooltip>
 				) : (
 					<Tooltip delayDuration={1000}>
-						<DropdownMenu open={annotateMenuOpen} onOpenChange={setAnnotateMenuOpen}>
+						<DropdownMenu open={predictionMenuOpen} onOpenChange={setPredictionMenuOpen}>
 							<DropdownMenuTrigger asChild>
 								<TooltipTrigger asChild>
 									<Button
-										variant={showAnnotations ? "default" : "outline"}
+										variant={showPredictions ? "default" : "outline"}
 										size="icon"
 										onClick={(e) => {
 											e.preventDefault();
-											setAnnotateMenuOpen(true);
+											setPredictionMenuOpen(true);
 										}}
-										disabled={!canAnnotate}
+										disabled={!canPredict}
 									>
 										<Image className="w-4 h-4" />
 									</Button>
@@ -338,39 +338,45 @@ const Controls: React.FC = () => {
 							</DropdownMenuTrigger>
 
 							<DropdownMenuContent align="end">
-								<DropdownMenuLabel>Annotations</DropdownMenuLabel>
+								<DropdownMenuLabel>Predictions</DropdownMenuLabel>
 								<DropdownMenuSeparator />
 								<DropdownMenuItem
 									onClick={async () => {
-										setAnnotateMenuOpen(false);
-										setShowAnnotations(true);
+										setPredictionMenuOpen(false);
 
-										await tryFetchAnnotations(selectedPair);
+										if (await tryFetchPredictions(selectedPair)) {
+											setShowPredictions(true);
+										}
 									}}
 								>
-									Annotate current
+									Predict current
 								</DropdownMenuItem>
 								<DropdownMenuItem
 									onClick={async () => {
-										setAnnotateMenuOpen(false);
-										setShowAnnotations(true);
+										setPredictionMenuOpen(false);
 
 										const pending = currentPairs
 											.map((p, i) => ({ i, key: p.volume.sopInstanceUID }))
-											.filter(({ key }) => !annotations.get(selectedModel!)?.has(key))
-											.filter(({ key }) => !loadingAnnotations.get(selectedModel!)?.has(key))
+											.filter(({ key }) => !predictions.get(selectedModel!)?.has(key))
+											.filter(({ key }) => !loadingPredictions.get(selectedModel!)?.has(key))
 											.map(({ i }) => i);
 
-										await Promise.allSettled(pending.map((i) => tryFetchAnnotations(i)));
+										const results = await Promise.allSettled(
+											pending.map((i) => tryFetchPredictions(i))
+										);
+
+										if (results[pending.indexOf(selectedPair)]?.status === "fulfilled") {
+											setShowPredictions(true);
+										}
 									}}
 								>
-									Annotate all
+									Predict all
 								</DropdownMenuItem>
 							</DropdownMenuContent>
 						</DropdownMenu>
 
 						<TooltipContent>
-							<p>Load annotations</p>
+							<p>Load predictions</p>
 						</TooltipContent>
 					</Tooltip>
 				)}

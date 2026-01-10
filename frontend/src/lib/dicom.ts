@@ -1,5 +1,8 @@
 import type { Laterality } from "@/hooks/useViewerState";
 import * as dicomParser from "dicom-parser";
+import type { Pt } from "./vec2";
+
+export type PixelSpacing = { row: number; col: number }; // in mm
 
 type DicomDataBase = {
 	file: File;
@@ -15,16 +18,15 @@ type DicomDataBase = {
 };
 
 export type SlicePosition = {
-	row0: number;
-	col0: number;
-	row1: number;
-	col1: number;
+	p0: Pt;
+	p1: Pt;
 };
 
 export type VolumeData = DicomDataBase & {
 	type: "volume";
-	slicePositions: SlicePosition[];
 	images: ImageData[];
+	slicePositions: SlicePosition[];
+	pixelSpacing: PixelSpacing;
 };
 
 export type FundusData = DicomDataBase & {
@@ -48,7 +50,7 @@ export async function getDicomData(file: File): Promise<DicomData> {
 
 	const patientName = dataSet.string("x00100010")?.replace("^", ", ").trim();
 	const laterality = dataSet.string("x00200062")?.toUpperCase() as Laterality;
-	const acquisitionDate: Date | undefined = (() => {
+	const acquisitionDate = (() => {
 		const s = dataSet.string("x00080022") ?? dataSet.string("x0008002a")?.slice(0, 8);
 		return s && /^\d{8}$/.test(s) ? new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)) : undefined;
 	})();
@@ -56,8 +58,8 @@ export async function getDicomData(file: File): Promise<DicomData> {
 	const rows = dataSet.uint16("x00280010");
 	const cols = dataSet.uint16("x00280011");
 	const frames = dataSet.intString("x00280008") ?? 1;
-	const bitsAllocated = dataSet.uint16("x00280100");
 
+	const bitsAllocated = dataSet.uint16("x00280100");
 	const pixelDataElement = dataSet.elements.x7fe00010;
 
 	if (
@@ -101,12 +103,18 @@ export async function getDicomData(file: File): Promise<DicomData> {
 		}
 
 		const slicePositions = readSlicePositions(dataSet);
+		const pixelSpacing = readPixelSpacing(dataSet);
+
+		if (!slicePositions || images.length !== slicePositions.length || images.length !== frames || !pixelSpacing) {
+			throw new Error(`Inconsistent data in volume file: ${file.name}`);
+		}
 
 		return {
 			type: "volume",
 			...base,
 			images,
 			slicePositions,
+			pixelSpacing,
 		};
 	}
 
@@ -158,31 +166,81 @@ function normalizeDicom(pixelData: Uint8Array | Uint16Array, cols: number, rows:
 	return imageData;
 }
 
-function readSlicePositions(dataSet: dicomParser.DataSet): SlicePosition[] {
-	const slicePositions = [];
-	const items = dataSet.elements.x52009230?.items ?? [];
+function readSlicePositions(dataSet: dicomParser.DataSet): SlicePosition[] | undefined {
+	const slicePositions: SlicePosition[] = [];
 
-	for (const it of items) {
-		const ds = it?.dataSet?.elements.x00220031?.items?.[0]?.dataSet;
-
-		if (!ds) {
-			continue;
-		}
-
-		const f = (i: number) => ds.float("x00220032", i);
-		const row0 = f(0);
-		const col0 = f(1);
-		const row1 = f(2);
-		const col1 = f(3);
-
-		if (!row0 || !col0 || !row1 || !col1) {
-			continue;
-		}
-
-		slicePositions.push({ row0, col0, row1, col1 });
+	// PerFrameFunctionalGroupsSequence (5200,9230)
+	const perFrame = dataSet.elements.x52009230;
+	if (!perFrame || !perFrame.items || perFrame.items.length === 0) {
+		return undefined;
 	}
 
-	return slicePositions;
+	for (const it of perFrame.items) {
+		const frameDs = it?.dataSet;
+		if (!frameDs) {
+			continue;
+		}
+
+		// OphthalmicFrameLocationSequence (0022,0031)
+		const frameLoc = frameDs.elements.x00220031;
+		if (!frameLoc || !frameLoc.items || frameLoc.items.length === 0) {
+			continue;
+		}
+
+		const locItemDs = frameLoc.items[0]?.dataSet;
+		if (!locItemDs) continue;
+
+		// Frame Location (0022,0032)
+		const row0 = locItemDs.float("x00220032", 0) ?? NaN;
+		const col0 = locItemDs.float("x00220032", 1) ?? NaN;
+		const row1 = locItemDs.float("x00220032", 2) ?? NaN;
+		const col1 = locItemDs.float("x00220032", 3) ?? NaN;
+
+		// skip incomplete frames
+		if (!Number.isFinite(row0) || !Number.isFinite(col0) || !Number.isFinite(row1) || !Number.isFinite(col1)) {
+			continue;
+		}
+
+		slicePositions.push({
+			p0: { x: col0, y: row0 },
+			p1: { x: col1, y: row1 },
+		});
+	}
+
+	return slicePositions.length > 0 ? slicePositions : undefined;
+}
+
+function readPixelSpacing(dataSet: dicomParser.DataSet): PixelSpacing | undefined {
+	// SharedFunctionalGroupsSequence (5200,9229)
+	const sharedFg = dataSet.elements.x52009229;
+	if (!sharedFg || !sharedFg.items || sharedFg.items.length === 0) {
+		return undefined;
+	}
+
+	const sharedItem = sharedFg.items[0];
+	if (!sharedItem?.dataSet) {
+		return undefined;
+	}
+
+	// PixelMeasuresSequence (0028,9110)
+	const pixelMeasures = sharedItem.dataSet.elements.x00289110;
+	if (!pixelMeasures || !pixelMeasures.items || pixelMeasures.items.length === 0) {
+		return undefined;
+	}
+
+	const pmItem = pixelMeasures.items[0];
+	if (!pmItem?.dataSet) {
+		return undefined;
+	}
+
+	// PixelSpacing (0028,0030)
+	const ps = pmItem.dataSet.string("x00280030");
+	if (!ps) {
+		return undefined;
+	}
+
+	const [row, col] = ps.split("\\").map(Number);
+	return { row, col }; // mm / px
 }
 
 export const renderDicom = (image: ImageData, canvas: HTMLCanvasElement) => {

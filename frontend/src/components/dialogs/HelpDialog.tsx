@@ -33,12 +33,12 @@ export function HelpDialog() {
 						associated fundus images in DICOM format.
 					</p>
 					<p>
-						It automatically detects and annotates Geographic Atrophy (GA) across all B-scan slices in the
-						volume. The annotated results are then projected and visualized on the corresponding fundus
-						image for spatial reference and analysis.
+						It automatically predicts different biomarkers across all B-scan slices in the volume. The
+						prediction results are then projected and visualized on the corresponding fundus image for
+						spatial reference and analysis.
 					</p>
 					<p>
-						This facilitates accurate assessment, visualization, and review of GA progression across imaging
+						This facilitates accurate assessment, visualization, and review of progression across imaging
 						modalities.
 					</p>
 				</div>

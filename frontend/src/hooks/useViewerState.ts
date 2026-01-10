@@ -1,8 +1,9 @@
-import type { SliceAnnotations, VolumeAnnotations } from "@/api/annotation";
 import { fetchModels } from "@/api/model";
+import type { SlicePredictions, VolumePredictions } from "@/api/prediction";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import type { FundusData, VolumeData } from "@/lib/dicom";
 import { ModelColors } from "@/lib/modelColors";
+import { postprocessVolume, type PostprocessParams } from "@/lib/postprocess";
 import { showError } from "@/lib/toast";
 import { clamp } from "@/lib/utils";
 import { useEffect, useMemo, useReducer, useState, type Dispatch, type SetStateAction } from "react";
@@ -47,17 +48,24 @@ export type ViewerState = {
 	setSelectedModel: (model: string) => void;
 	loadingModels: boolean;
 	setLoadingModels: (value: boolean) => void;
+
 	selectedModelLabels?: string[];
+	hiddenLabels: Set<number>;
+	setHiddenLabels: (fn: (prev: Set<number>) => Set<number>) => void;
 
-	annotations: Map<string, Map<string, VolumeAnnotations>>;
-	setAnnotations: Dispatch<SetStateAction<Map<string, Map<string, VolumeAnnotations>>>>;
-	loadingAnnotations: Map<string, Set<string>>;
-	setLoadingAnnotations: Dispatch<SetStateAction<Map<string, Set<string>>>>;
-	selectedVolumeAnnotations?: VolumeAnnotations;
-	selectedSliceAnnotations?: SliceAnnotations;
+	predictions: Map<string, Map<string, VolumePredictions>>;
+	setPredictions: Dispatch<SetStateAction<Map<string, Map<string, VolumePredictions>>>>;
+	loadingPredictions: Map<string, Set<string>>;
+	setLoadingPredictions: Dispatch<SetStateAction<Map<string, Set<string>>>>;
+	selectedVolumePredictions?: VolumePredictions;
+	selectedSlicePredictions?: SlicePredictions;
 
-	showAnnotations: boolean;
-	setShowAnnotations: (value: boolean) => void;
+	processedPredictions: Map<string, Map<string, VolumePredictions>>;
+	processedVolumePredictions?: VolumePredictions;
+	processedSlicePredictions?: SlicePredictions;
+
+	showPredictions: boolean;
+	setShowPredictions: (value: boolean) => void;
 	showStats: boolean;
 	setShowStats: (value: boolean) => void;
 
@@ -65,6 +73,11 @@ export type ViewerState = {
 	setShowDates: (value: boolean) => void;
 	showFilenames: boolean;
 	setShowFilenames: (value: boolean) => void;
+	showScores: boolean;
+	setShowScores: (value: boolean) => void;
+
+	postParameters: PostprocessParams;
+	setPostParameters: Dispatch<SetStateAction<PostprocessParams>>;
 
 	modelColors: Record<string, ModelColors>;
 	setModelColors: Dispatch<SetStateAction<Record<string, ModelColors>>>;
@@ -79,7 +92,7 @@ type NavState = {
 	selectedSlice: number;
 	viewMode: ViewMode;
 	showSlices: boolean;
-	showAnnotations: boolean;
+	showPredictions: boolean;
 };
 
 type Action =
@@ -90,7 +103,7 @@ type Action =
 	| { type: "SET_SLICE"; payload: number }
 	| { type: "SET_VIEWMODE"; payload: ViewMode }
 	| { type: "SET_SHOW_SLICES"; payload: boolean }
-	| { type: "SET_SHOW_ANNOTATIONS"; payload: boolean }
+	| { type: "SET_SHOW_PREDICTIONS"; payload: boolean }
 	| { type: "RESET_WITHIN_PATIENT" };
 
 const initialNavState: NavState = {
@@ -101,7 +114,7 @@ const initialNavState: NavState = {
 	selectedSlice: 0,
 	viewMode: "slice",
 	showSlices: false,
-	showAnnotations: false,
+	showPredictions: false,
 };
 
 function firstAvailableLaterality(map: DicomPairsByLaterality, pid?: string): Laterality {
@@ -128,7 +141,7 @@ function reducer(state: NavState, action: Action): NavState {
 				selectedSlice: 0,
 				viewMode: "slice",
 				showSlices: false,
-				showAnnotations: false,
+				showPredictions: false,
 			};
 		}
 
@@ -142,7 +155,7 @@ function reducer(state: NavState, action: Action): NavState {
 				selectedLaterality,
 				selectedPair: 0,
 				selectedSlice: 0,
-				showAnnotations: false,
+				showPredictions: false,
 			};
 		}
 
@@ -154,7 +167,7 @@ function reducer(state: NavState, action: Action): NavState {
 				selectedLaterality: lat,
 				selectedPair: 0,
 				selectedSlice: 0,
-				showAnnotations: false,
+				showPredictions: false,
 			};
 		}
 
@@ -175,15 +188,15 @@ function reducer(state: NavState, action: Action): NavState {
 		case "SET_SHOW_SLICES":
 			return { ...state, showSlices: action.payload };
 
-		case "SET_SHOW_ANNOTATIONS":
-			return { ...state, showAnnotations: action.payload };
+		case "SET_SHOW_PREDICTIONS":
+			return { ...state, showPredictions: action.payload };
 
 		case "RESET_WITHIN_PATIENT":
 			return {
 				...state,
 				selectedPair: 0,
 				selectedSlice: 0,
-				showAnnotations: false,
+				showPredictions: false,
 			};
 
 		default:
@@ -195,14 +208,24 @@ export function useViewerState(): ViewerState {
 	const [models, setModels] = useState<Map<string, string[]>>(new Map());
 	const [selectedModel, setSelectedModel] = useState<string>();
 	const [loadingModels, setLoadingModels] = useState(false);
-	const selectedModelLabels = selectedModel ? models.get(selectedModel) : undefined;
 
-	const [annotations, setAnnotations] = useState<Map<string, Map<string, VolumeAnnotations>>>(new Map());
-	const [loadingAnnotations, setLoadingAnnotations] = useState<Map<string, Set<string>>>(new Map());
+	const selectedModelLabels = selectedModel ? models.get(selectedModel) : undefined;
+	const [hiddenLabels, setHiddenLabels] = useState<Set<number>>(new Set());
+
+	const [predictions, setPredictions] = useState<Map<string, Map<string, VolumePredictions>>>(new Map());
+	const [loadingPredictions, setLoadingPredictions] = useState<Map<string, Set<string>>>(new Map());
 	const [showStats, setShowStats] = useState(false);
 
 	const [showDates, setShowDates] = usePersistentState("viewer:showDates", true);
 	const [showFilenames, setShowFilenames] = usePersistentState("viewer:showFilenames", true);
+	const [showScores, setShowScores] = usePersistentState("viewer:showScores", false);
+
+	const [postParameters, setPostParameters] = usePersistentState<PostprocessParams>("viewer:postParameters", {
+		scoreThreshold: 0.5,
+		nmsIouThreshold: 0.5,
+		topK: 100,
+	});
+
 	const [modelColors, setModelColors] = usePersistentModelColors("viewer:modelColors");
 
 	const emptyLabelColors = useMemo(() => new ModelColors([], []), []);
@@ -235,10 +258,31 @@ export function useViewerState(): ViewerState {
 	const selectedVolume = currentPairs[nav.selectedPair]?.volume;
 	const selectedFundus = currentPairs[nav.selectedPair]?.fundus;
 
-	const selectedVolumeAnnotations = selectedModel
-		? annotations.get(selectedModel)?.get(selectedVolume.sopInstanceUID)
+	const selectedVolumePredictions = selectedModel
+		? predictions.get(selectedModel)?.get(selectedVolume.sopInstanceUID)
 		: undefined;
-	const selectedSliceAnnotations = selectedVolumeAnnotations?.[nav.selectedSlice];
+	const selectedSlicePredictions = selectedVolumePredictions?.[nav.selectedSlice];
+
+	const processedPredictions = useMemo(() => {
+		const out = new Map<string, Map<string, VolumePredictions>>();
+
+		for (const [modelName, volumesMap] of predictions) {
+			const processedVolumes = new Map<string, VolumePredictions>();
+
+			for (const [sopInstanceUID, volumePreds] of volumesMap) {
+				processedVolumes.set(sopInstanceUID, postprocessVolume(volumePreds, postParameters));
+			}
+
+			out.set(modelName, processedVolumes);
+		}
+
+		return out;
+	}, [predictions, postParameters]);
+
+	const processedVolumePredictions = useMemo(() => {
+		return selectedVolumePredictions ? postprocessVolume(selectedVolumePredictions, postParameters) : undefined;
+	}, [selectedVolumePredictions, postParameters]);
+	const processedSlicePredictions = processedVolumePredictions?.[nav.selectedSlice];
 
 	useEffect(() => {
 		const loadModels = async () => {
@@ -276,6 +320,10 @@ export function useViewerState(): ViewerState {
 
 		loadModels();
 	}, []);
+
+	useEffect(() => {
+		setHiddenLabels(() => new Set());
+	}, [selectedModelLabels]);
 
 	return {
 		// Files
@@ -316,18 +364,26 @@ export function useViewerState(): ViewerState {
 		setSelectedModel,
 		loadingModels,
 		setLoadingModels,
+
+		// Labels
 		selectedModelLabels,
+		hiddenLabels,
+		setHiddenLabels,
 
-		// Annotations
-		annotations,
-		setAnnotations,
-		loadingAnnotations,
-		setLoadingAnnotations,
-		selectedVolumeAnnotations,
-		selectedSliceAnnotations,
+		// Predictions
+		predictions,
+		setPredictions,
+		loadingPredictions,
+		setLoadingPredictions,
+		selectedVolumePredictions,
+		selectedSlicePredictions,
 
-		showAnnotations: nav.showAnnotations,
-		setShowAnnotations: (v) => dispatch({ type: "SET_SHOW_ANNOTATIONS", payload: v }),
+		processedPredictions,
+		processedVolumePredictions,
+		processedSlicePredictions,
+
+		showPredictions: nav.showPredictions,
+		setShowPredictions: (v) => dispatch({ type: "SET_SHOW_PREDICTIONS", payload: v }),
 		showStats,
 		setShowStats,
 
@@ -336,6 +392,12 @@ export function useViewerState(): ViewerState {
 		setShowDates,
 		showFilenames,
 		setShowFilenames,
+		showScores,
+		setShowScores,
+
+		postParameters,
+		setPostParameters,
+
 		modelColors,
 		setModelColors,
 		selectedModelColors,

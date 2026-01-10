@@ -57,3 +57,27 @@ export function clamp(value: number, min: number, max: number): number {
 
 	return value < min ? min : value > max ? max : value;
 }
+
+export function withAlpha(color: string, alpha: number) {
+	const a = Math.max(0, Math.min(1, alpha));
+
+	// #rgb or #rrggbb
+	if (color.startsWith("#")) {
+		const hex = color.slice(1);
+		const value =
+			hex.length === 3
+				? hex
+						.split("")
+						.map((c) => c + c)
+						.join("")
+				: hex;
+
+		const r = parseInt(value.slice(0, 2), 16);
+		const g = parseInt(value.slice(2, 4), 16);
+		const b = parseInt(value.slice(4, 6), 16);
+
+		return `rgba(${r}, ${g}, ${b}, ${a})`;
+	}
+
+	return color;
+}

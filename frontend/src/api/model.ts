@@ -2,8 +2,10 @@ import { z } from "zod";
 import { fetchWithTimeout } from "./http";
 
 export const ModelMapSchema = z
-	.record(z.string(), z.array(z.string()))
-	.transform((rec) => new Map<string, string[]>(Object.entries(rec)));
+	.object({
+		models: z.record(z.string(), z.array(z.string())),
+	})
+	.transform((d) => new Map<string, string[]>(Object.entries(d.models)));
 
 export type ModelMap = z.infer<typeof ModelMapSchema>;
 

@@ -6,6 +6,7 @@ import Controls from "./components/Controls";
 import DicomViewer from "./components/dicomViewer";
 import { GlobalLoader } from "./components/GlobalLoader";
 import Header from "./components/Header";
+import ResearchBanner from "./components/ResearchBanner";
 import Statistics from "./components/statistics";
 import { useViewer } from "./context/ViewerStateProvider";
 
@@ -32,7 +33,9 @@ const App: React.FC = () => {
 			<Toaster position="top-center" />
 
 			<div className="flex flex-col h-screen">
+				<ResearchBanner />
 				<Header />
+
 				<main className="flex-1 overflow-hidden">
 					{currentPairs.length > 0 ? (
 						<ResizablePanelGroup direction="horizontal">
@@ -59,6 +62,7 @@ const App: React.FC = () => {
 						</div>
 					)}
 				</main>
+
 				<Controls />
 			</div>
 		</div>

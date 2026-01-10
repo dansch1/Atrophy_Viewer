@@ -14,10 +14,22 @@ import { DEFAULT_LABEL_COLOR } from "@/lib/modelColors";
 import { rafThrottle } from "@/lib/utils";
 import { ChevronDown, ChevronRight, Moon, Settings, Sun } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
+import { Slider } from "../ui/slider";
 
 export function SettingsDialog() {
-	const { models, showDates, setShowDates, showFilenames, setShowFilenames, modelColors, setModelColors } =
-		useViewer();
+	const {
+		models,
+		showDates,
+		setShowDates,
+		showFilenames,
+		setShowFilenames,
+		showScores,
+		setShowScores,
+		postParameters,
+		setPostParameters,
+		modelColors,
+		setModelColors,
+	} = useViewer();
 
 	const [isOpen, setIsOpen] = useState(false);
 	const { isDark, setIsDark } = useDarkMode();
@@ -72,10 +84,55 @@ export function SettingsDialog() {
 					<Switch id="theme-toggle" checked={isDark} onCheckedChange={setIsDark} />
 
 					<span className="text-muted-foreground">Show Dates</span>
-					<Switch id="filenames-toggle" checked={showDates} onCheckedChange={setShowDates} />
+					<Switch id="dates-toggle" checked={showDates} onCheckedChange={setShowDates} />
 
 					<span className="text-muted-foreground">Show Filenames</span>
 					<Switch id="filenames-toggle" checked={showFilenames} onCheckedChange={setShowFilenames} />
+
+					<span className="text-muted-foreground">Show Scores</span>
+					<Switch id="scores-toggle" checked={showScores} onCheckedChange={setShowScores} />
+
+					{/* Section: Postprocessing */}
+					<h4 className="col-span-2 text-sm font-semibold text-foreground mt-4 mb-2">Postprocessing</h4>
+
+					<span className="text-muted-foreground">Score threshold </span>
+					<span className="text-foreground/80">
+						{postParameters.scoreThreshold.toFixed(2)}{" "}
+						<Slider
+							className="[&_[data-slot=slider-track]]:bg-input/80"
+							value={[postParameters.scoreThreshold]}
+							min={0}
+							max={1}
+							step={0.01}
+							onValueChange={([v]) => setPostParameters((p) => ({ ...p, scoreThreshold: v }))}
+						/>
+					</span>
+
+					<span className="text-muted-foreground">NMS IoU</span>
+					<span className="text-foreground/80">
+						{postParameters.nmsIouThreshold.toFixed(2)}{" "}
+						<Slider
+							className="[&_[data-slot=slider-track]]:bg-input/80"
+							value={[postParameters.nmsIouThreshold]}
+							min={0}
+							max={1}
+							step={0.01}
+							onValueChange={([v]) => setPostParameters((p) => ({ ...p, nmsIouThreshold: v }))}
+						/>
+					</span>
+
+					<span className="text-muted-foreground">TopK</span>
+					<span className="text-foreground/80">
+						{postParameters.topK === 0 ? "Off" : postParameters.topK}
+						<Slider
+							className="[&_[data-slot=slider-track]]:bg-input/80"
+							value={[postParameters.topK]}
+							min={0}
+							max={100}
+							step={1}
+							onValueChange={([v]) => setPostParameters((p) => ({ ...p, topK: v }))}
+						/>
+					</span>
 
 					{/* Section: Legend */}
 					<h4 className="col-span-2 text-sm font-semibold text-foreground mt-4 mb-2">Legend</h4>

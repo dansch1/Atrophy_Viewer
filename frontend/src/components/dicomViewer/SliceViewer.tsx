@@ -9,9 +9,11 @@ const SliceViewer: React.FC = () => {
 		selectedSlice,
 		setSelectedSlice,
 		viewMode,
-		selectedSliceAnnotations,
-		showAnnotations,
+		hiddenLabels,
+		processedSlicePredictions,
+		showPredictions,
 		showFilenames,
+		showScores,
 		selectedModelColors,
 	} = useViewer();
 
@@ -41,28 +43,57 @@ const SliceViewer: React.FC = () => {
 					{`${selectedSlice + 1} / ${selectedVolume.frames}`}
 				</div>
 
-				{selectedSliceAnnotations && showAnnotations && (
+				{processedSlicePredictions && showPredictions && (
 					<svg className="absolute top-0 left-0 w-full h-full">
-						{selectedSliceAnnotations.map(({ x0, x1, cls }, i) => {
-							if (x0 >= x1 || x0 < 0 || x1 > selectedVolume.cols) {
+						{processedSlicePredictions.boxes.map((box, i) => {
+							const cls = processedSlicePredictions.classes[i];
+
+							if (hiddenLabels.has(cls)) {
 								return null;
 							}
 
-							const width = x1 - x0;
+							const [x1, y1, x2, y2] = box;
+
+							const x = clamp(Math.min(x1, x2), 0, selectedVolume.cols);
+							const y = clamp(Math.min(y1, y2), 0, selectedVolume.rows);
+							const w = Math.max(0, clamp(Math.max(x1, x2), 0, selectedVolume.cols) - x);
+							const h = Math.max(0, clamp(Math.max(y1, y2), 0, selectedVolume.rows) - y);
+
+							if (w === 0 || h === 0) {
+								return null;
+							}
+
 							const color = selectedModelColors.getColorByIndex(cls);
+							const score = processedSlicePredictions.scores[i];
 
 							return (
-								<rect
-									key={`slice-annotation-${i}`}
-									x={x0}
-									y="0"
-									width={width}
-									height="100%"
-									fill={color}
-									fillOpacity="0.3"
-									stroke={color}
-									strokeWidth="0.1"
-								/>
+								<g key={`slice-prediction-${i}`}>
+									<rect
+										x={x}
+										y={y}
+										width={w}
+										height={h}
+										fill={color}
+										fillOpacity={0.3}
+										stroke={color}
+										strokeWidth={0.8}
+										vectorEffect="non-scaling-stroke"
+									/>
+
+									{showScores && (
+										<text
+											x={x}
+											y={Math.max(0, y - 2)}
+											fontSize={12}
+											fill={color}
+											textAnchor="start"
+											dominantBaseline="ideographic"
+											pointerEvents="none"
+										>
+											{score.toFixed(2)}
+										</text>
+									)}
+								</g>
 							);
 						})}
 					</svg>

@@ -1,19 +1,25 @@
-import type { VolumeAnnotations } from "@/api/annotation";
+import type { VolumePredictions } from "@/api/prediction";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { useViewer } from "@/context/ViewerStateProvider";
-import { useEffect, useMemo, useState } from "react";
+import type { PixelSpacing } from "@/lib/dicom";
+import { area } from "@/lib/postprocess";
+import { cn } from "@/lib/utils";
+import { useMemo } from "react";
 import { Legend, Line, LineChart, XAxis, YAxis } from "recharts";
+import { Button } from "../ui/button";
 
 const Progression: React.FC = () => {
-	const { currentPairs, setSelectedPair, selectedModel, selectedModelLabels, annotations, selectedModelColors } =
-		useViewer();
-
-	const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
-
-	useEffect(() => {
-		setHiddenSeries(new Set());
-	}, [selectedModelLabels]);
+	const {
+		currentPairs,
+		setSelectedPair,
+		selectedModel,
+		selectedModelLabels,
+		hiddenLabels,
+		setHiddenLabels,
+		processedPredictions,
+		selectedModelColors,
+	} = useViewer();
 
 	const data = useMemo(() => {
 		if (!selectedModel || !selectedModelLabels) {
@@ -24,35 +30,41 @@ const Progression: React.FC = () => {
 			.map((pair) => {
 				const volume = pair.volume;
 				const key = volume.sopInstanceUID;
-				const volumeAnnotations = annotations.get(selectedModel)?.get(key);
+				const volumePredictions = processedPredictions.get(selectedModel)?.get(key);
 				const dateMs = volume.acquisitionDate.getTime();
 				const row: Record<string, number> = { date: dateMs };
 
 				for (let i = 0; i < selectedModelLabels?.length; i++) {
-					row[selectedModelLabels[i]] = sumWidthForClass(volumeAnnotations, i);
+					row[selectedModelLabels[i]] = sumAreaForClass(volumePredictions, i, volume.pixelSpacing);
 				}
 
 				return row;
 			})
 			.sort((a, b) => a.date - b.date);
-	}, [currentPairs, selectedModel, selectedModelLabels, annotations]);
+	}, [currentPairs, selectedModel, selectedModelLabels, processedPredictions]);
 
-	function sumWidthForClass(volumeAnnotations: VolumeAnnotations | undefined, cls: number): number {
-		if (!volumeAnnotations) {
+	function sumAreaForClass(
+		volumePredictions: VolumePredictions | undefined,
+		cls: number,
+		pixelSpacing: PixelSpacing
+	): number {
+		if (!volumePredictions) {
 			return 0;
 		}
 
 		let sum = 0;
 
-		for (const slice of volumeAnnotations) {
-			for (const sliceAnnotations of slice) {
-				if (sliceAnnotations.cls === cls) {
-					sum += Math.max(0, sliceAnnotations.x1 - sliceAnnotations.x0);
+		for (const slicePredictions of volumePredictions) {
+			const { boxes, classes } = slicePredictions;
+
+			for (let i = 0; i < boxes.length; i++) {
+				if (classes[i] === cls) {
+					sum += area(boxes[i]);
 				}
 			}
 		}
 
-		return sum;
+		return sum * pixelSpacing.row * pixelSpacing.col * 1_000_000; // µm²
 	}
 
 	const chartConfig = (() => {
@@ -84,37 +96,28 @@ const Progression: React.FC = () => {
 
 		return (
 			<div className="flex flex-wrap justify-center w-full gap-2 mt-2 text-xs">
-				{selectedModelLabels.map((label) => {
-					const isHidden = hiddenSeries.has(label);
-
+				{selectedModelLabels.map((label, cls) => {
 					return (
-						<button
-							key={label}
-							type="button"
-							onClick={() => toggleSeries(label)}
-							className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-xs transition ${
-								isHidden ? "opacity-40" : ""
-							}`}
+						<Button
+							key={cls}
+							variant="outline"
+							size="sm"
+							onClick={() => toggleLabel(cls)}
+							className={cn("gap-1 px-2 py-1 text-xs", hiddenLabels.has(cls) && "opacity-40")}
 						>
-							<span className="w-3 h-3 rounded-sm" style={{ backgroundColor: `var(--color-${label})` }} />
+							<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: `var(--color-${label})` }} />
 							<span>{label}</span>
-						</button>
+						</Button>
 					);
 				})}
 			</div>
 		);
 	};
 
-	const toggleSeries = (key: string) => {
-		setHiddenSeries((prev) => {
+	const toggleLabel = (label: number) => {
+		setHiddenLabels((prev) => {
 			const next = new Set(prev);
-
-			if (next.has(key)) {
-				next.delete(key);
-			} else {
-				next.add(key);
-			}
-
+			next.has(label) ? next.delete(label) : next.add(label);
 			return next;
 		});
 	};
@@ -122,7 +125,7 @@ const Progression: React.FC = () => {
 	return (
 		<Card className="h-full">
 			<CardHeader>
-				<CardTitle>Total lesion width per class</CardTitle>
+				<CardTitle>Total lesion area per class (in µm²)</CardTitle>
 			</CardHeader>
 
 			{data.length > 0 && (
@@ -145,16 +148,16 @@ const Progression: React.FC = () => {
 								content={renderLegend}
 							/>
 
-							{selectedModelLabels?.map((label) => (
+							{selectedModelLabels?.map((label, cls) => (
 								<Line
-									key={label}
+									key={cls}
 									dataKey={label}
 									type="monotone"
 									stroke={`var(--color-${label})`}
 									strokeWidth={2}
 									dot={{ r: 3 }}
 									isAnimationActive={false}
-									hide={hiddenSeries.has(label)}
+									hide={hiddenLabels.has(cls)}
 								/>
 							))}
 						</LineChart>
