@@ -53,7 +53,6 @@ const Progression: React.FC = () => {
 		}
 
 		let sum = 0;
-
 		for (const slicePredictions of volumePredictions) {
 			const { boxes, classes } = slicePredictions;
 

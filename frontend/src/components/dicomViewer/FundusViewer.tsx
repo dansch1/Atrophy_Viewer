@@ -12,8 +12,8 @@ const FundusViewer: React.FC = () => {
 		setSelectedSlice,
 		viewMode,
 		setViewMode,
-		hiddenLabels,
 		showSlices,
+		hiddenLabels,
 		processedVolumePredictions,
 		showPredictions,
 		showFilenames,
@@ -85,7 +85,6 @@ const FundusViewer: React.FC = () => {
 							{processedVolumePredictions.flatMap(({ boxes, scores, classes }, i) =>
 								boxes.map((box, j) => {
 									const cls = classes[j];
-
 									if (hiddenLabels.has(cls)) {
 										return null;
 									}

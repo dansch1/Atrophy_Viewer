@@ -1,8 +1,8 @@
 export type Pt = { x: number; y: number };
 
 export function unitNormal(a: Pt, b: Pt) {
-	const dx = b.x - a.x,
-		dy = b.y - a.y;
+	const dx = b.x - a.x;
+	const dy = b.y - a.y;
 	const L = Math.hypot(dx, dy) || 1;
 	return { nx: dy / L, ny: -dx / L };
 }

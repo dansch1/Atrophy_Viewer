@@ -1,4 +1,5 @@
-import { useViewerState, type ViewerState } from "@/hooks/useViewerState";
+import { useViewerState } from "@/hooks/viewer/useViewerState";
+import type { ViewerState } from "@/hooks/viewer/viewerTypes";
 import React, { createContext, useContext } from "react";
 
 const ViewerStateContext = createContext<ViewerState | null>(null);

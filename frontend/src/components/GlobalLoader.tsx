@@ -3,10 +3,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { useViewer } from "@/context/ViewerStateProvider";
 
 export function GlobalLoader() {
-	const { loadingModels, loadingPredictions } = useViewer();
+	const { loadingPairs, loadingModels, loadingPredictions } = useViewer();
 
-	const anyModelLoading = Array.from(loadingPredictions.values()).some((s) => s.size > 0);
-	const isLoading = loadingModels || anyModelLoading;
+	const anyPredictionLoading = Array.from(loadingPredictions.values()).some((s) => s.size > 0);
+	const isLoading = loadingPairs || loadingModels || anyPredictionLoading;
 
 	if (!isLoading) {
 		return null;

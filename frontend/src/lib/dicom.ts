@@ -1,4 +1,4 @@
-import type { Laterality } from "@/hooks/useViewerState";
+import type { Laterality } from "@/hooks/viewer/viewerTypes";
 import * as dicomParser from "dicom-parser";
 import type { Pt } from "./vec2";
 
@@ -196,7 +196,7 @@ function readSlicePositions(dataSet: dicomParser.DataSet): SlicePosition[] | und
 		const row1 = locItemDs.float("x00220032", 2) ?? NaN;
 		const col1 = locItemDs.float("x00220032", 3) ?? NaN;
 
-		// skip incomplete frames
+		// Skip incomplete frames
 		if (!Number.isFinite(row0) || !Number.isFinite(col0) || !Number.isFinite(row1) || !Number.isFinite(col1)) {
 			continue;
 		}

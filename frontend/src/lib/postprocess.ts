@@ -32,7 +32,7 @@ export type PostprocessParams = {
 export function postprocessSlice(slice: SlicePredictions, p: PostprocessParams): SlicePredictions {
 	const n = Math.min(slice.boxes.length, slice.scores.length, slice.classes.length);
 
-	// score filter
+	// Score filter
 	const idx: number[] = [];
 	for (let i = 0; i < n; i++) {
 		if (slice.scores[i] >= p.scoreThreshold) idx.push(i);
@@ -44,7 +44,7 @@ export function postprocessSlice(slice: SlicePredictions, p: PostprocessParams):
 
 	idx.sort((a, b) => slice.scores[b] - slice.scores[a]);
 
-	// batched NMS
+	// Batched NMS
 	const kept: number[] = [];
 	const keptByClass = new Map<number, number[]>();
 

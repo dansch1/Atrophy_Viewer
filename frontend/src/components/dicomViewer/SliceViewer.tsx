@@ -47,7 +47,6 @@ const SliceViewer: React.FC = () => {
 					<svg className="absolute top-0 left-0 w-full h-full">
 						{processedSlicePredictions.boxes.map((box, i) => {
 							const cls = processedSlicePredictions.classes[i];
-
 							if (hiddenLabels.has(cls)) {
 								return null;
 							}

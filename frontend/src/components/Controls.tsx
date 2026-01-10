@@ -1,4 +1,3 @@
-import { fetchPredictions } from "@/api/prediction";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -12,8 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useViewer } from "@/context/ViewerStateProvider";
-import type { Laterality } from "@/hooks/useViewerState";
-import { showError, showInfo, showSuccess } from "@/lib/toast";
+import type { Laterality } from "@/hooks/viewer/viewerTypes";
 import {
 	BarChart3,
 	ChevronLeft,
@@ -25,7 +23,7 @@ import {
 	Square,
 	SquareSplitVertical,
 } from "lucide-react";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 const Controls: React.FC = () => {
 	const {
@@ -48,11 +46,11 @@ const Controls: React.FC = () => {
 		selectedModel,
 		setSelectedModel,
 		predictions,
-		setPredictions,
 		loadingPredictions,
-		setLoadingPredictions,
 		showPredictions,
 		setShowPredictions,
+		predictCurrent,
+		predictAll,
 		showStats,
 		setShowStats,
 	} = useViewer();
@@ -60,109 +58,38 @@ const Controls: React.FC = () => {
 	const [isPlaying, setIsPlaying] = useState(false);
 	const [predictionMenuOpen, setPredictionMenuOpen] = useState(false);
 
-	const abortControllers = useRef<AbortController[]>([]);
-
-	const hasSelection = selectedVolume && selectedModel;
-	const canPredict = hasSelection && !loadingPredictions.get(selectedModel)?.has(selectedVolume.sopInstanceUID);
-	const hasPredictionForCurrent = hasSelection && predictions.get(selectedModel)?.has(selectedVolume.sopInstanceUID);
-
 	useEffect(() => {
-		cancelAllRequests();
-		setPredictions(() => new Map());
-		setLoadingPredictions(() => new Map());
-	}, [dicomPairs]);
+		if (!isPlaying) return;
 
-	useEffect(() => {
-		cancelAllRequests();
-		setShowPredictions(false);
-	}, [selectedModel]);
-
-	useEffect(() => {
-		if (showPredictions) {
-			tryFetchPredictions(selectedPair);
-		}
-	}, [selectedPair, showPredictions]);
-
-	const tryFetchPredictions = async (index: number) => {
-		if (!selectedModel) {
-			showError("No model selected", "Please select a model before toggling prediction.");
-			return false;
+		if (currentPairs.length < 2) {
+			setIsPlaying(false);
+			return;
 		}
 
-		const volume = currentPairs[index]?.volume;
-
-		if (!volume) {
-			showError("No volume file selected", "Please select a valid DICOM volume file before toggling prediction.");
-			return false;
-		}
-
-		const key = volume.sopInstanceUID;
-		const file = volume.file;
-
-		if (predictions.get(selectedModel)?.has(key)) {
-			return true;
-		}
-
-		if (loadingPredictions.get(selectedModel)?.has(key)) {
-			return false;
-		}
-
-		setLoadingPredictions((prev) => {
-			const next = new Map(prev);
-			const set = new Set(next.get(selectedModel) ?? []);
-
-			set.add(key);
-			next.set(selectedModel, set);
-
-			return next;
-		});
-
-		const controller = new AbortController();
-		abortControllers.current.push(controller);
-
-		try {
-			const data = await fetchPredictions(file, selectedModel, controller);
-
-			setPredictions((prev) => {
-				const next = new Map(prev);
-				const perModel = new Map(next.get(selectedModel) ?? []);
-
-				perModel.set(key, data);
-				next.set(selectedModel, perModel);
-
-				return next;
-			});
-
-			showSuccess("Prediction complete", `Predictions loaded for file: ${file.name}`);
-			return true;
-		} catch (err: any) {
-			if (err.name === "AbortError") {
-				showInfo("Request cancelled", `The prediction request for ${file.name} was cancelled.`);
-			} else {
-				console.error("Prediction request failed", { file, err });
-				showError("Prediction error", "Failed to predict the volume file. Please try again.");
+		const id = window.setInterval(() => {
+			if (selectedPair >= currentPairs.length - 1) {
+				setIsPlaying(false);
+				return;
 			}
 
-			return false;
-		} finally {
-			setLoadingPredictions((prev) => {
-				const next = new Map(prev);
-				const set = new Set(next.get(selectedModel) ?? []);
+			setSelectedPair(selectedPair + 1);
+		}, 350);
 
-				set.delete(volume.sopInstanceUID);
-				next.set(selectedModel, set);
+		return () => window.clearInterval(id);
+	}, [isPlaying, selectedPair, currentPairs.length, setSelectedPair]);
 
-				return next;
-			});
+	const hasSelection = !!(selectedModel && selectedVolume);
+	const isCurrentLoading = useMemo(() => {
+		if (!hasSelection) return false;
+		return loadingPredictions.get(selectedModel)?.has(selectedVolume.sopInstanceUID) ?? false;
+	}, [hasSelection, loadingPredictions, selectedModel, selectedVolume]);
 
-			abortControllers.current = abortControllers.current.filter((c) => c !== controller);
-		}
-	};
+	const hasPredictionForCurrent = useMemo(() => {
+		if (!hasSelection) return false;
+		return predictions.get(selectedModel)?.has(selectedVolume.sopInstanceUID) ?? false;
+	}, [hasSelection, predictions, selectedModel, selectedVolume]);
 
-	const cancelAllRequests = () => {
-		abortControllers.current.forEach((c) => c.abort());
-		abortControllers.current = [];
-	};
+	const canOpenPredictionMenu = hasSelection && !isCurrentLoading;
 
 	return (
 		<footer className="relative grid grid-cols-3 items-center p-4 bg-accent">
@@ -215,7 +142,7 @@ const Controls: React.FC = () => {
 				</Button>
 
 				<Button
-					onClick={() => setIsPlaying(!isPlaying)}
+					onClick={() => setIsPlaying((p) => !p)}
 					variant="default"
 					size="icon"
 					disabled={currentPairs.length < 2}
@@ -309,7 +236,7 @@ const Controls: React.FC = () => {
 								variant={showPredictions ? "default" : "outline"}
 								size="icon"
 								onClick={() => setShowPredictions(!showPredictions)}
-								disabled={!canPredict}
+								disabled={!hasSelection}
 							>
 								<Image className="w-4 h-4" />
 							</Button>
@@ -330,7 +257,7 @@ const Controls: React.FC = () => {
 											e.preventDefault();
 											setPredictionMenuOpen(true);
 										}}
-										disabled={!canPredict}
+										disabled={!canOpenPredictionMenu}
 									>
 										<Image className="w-4 h-4" />
 									</Button>
@@ -343,10 +270,8 @@ const Controls: React.FC = () => {
 								<DropdownMenuItem
 									onClick={async () => {
 										setPredictionMenuOpen(false);
-
-										if (await tryFetchPredictions(selectedPair)) {
-											setShowPredictions(true);
-										}
+										const ok = await predictCurrent();
+										if (ok) setShowPredictions(true);
 									}}
 								>
 									Predict current
@@ -354,20 +279,8 @@ const Controls: React.FC = () => {
 								<DropdownMenuItem
 									onClick={async () => {
 										setPredictionMenuOpen(false);
-
-										const pending = currentPairs
-											.map((p, i) => ({ i, key: p.volume.sopInstanceUID }))
-											.filter(({ key }) => !predictions.get(selectedModel!)?.has(key))
-											.filter(({ key }) => !loadingPredictions.get(selectedModel!)?.has(key))
-											.map(({ i }) => i);
-
-										const results = await Promise.allSettled(
-											pending.map((i) => tryFetchPredictions(i))
-										);
-
-										if (results[pending.indexOf(selectedPair)]?.status === "fulfilled") {
-											setShowPredictions(true);
-										}
+										const results = await predictAll();
+										if (results[selectedPair]) setShowPredictions(true);
 									}}
 								>
 									Predict all

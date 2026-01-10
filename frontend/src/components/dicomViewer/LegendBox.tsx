@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 
 export const LegendBox = () => {
-	const { selectedModelLabels, showPredictions, selectedModelColors, hiddenLabels, setHiddenLabels } = useViewer();
+	const { selectedModelLabels, hiddenLabels, setHiddenLabels, showPredictions, selectedModelColors } = useViewer();
 
 	if (!selectedModelLabels || !showPredictions) {
 		return null;
