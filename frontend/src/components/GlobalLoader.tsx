@@ -1,12 +1,9 @@
 import { Item, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
-import { useViewer } from "@/context/ViewerStateProvider";
+import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
 
 export function GlobalLoader() {
-	const { loadingPairs, loadingModels, loadingPredictions } = useViewer();
-
-	const anyPredictionLoading = Array.from(loadingPredictions.values()).some((s) => s.size > 0);
-	const isLoading = loadingPairs || loadingModels || anyPredictionLoading;
+	const { isLoading, message } = useGlobalLoader();
 
 	if (!isLoading) {
 		return null;
@@ -19,7 +16,7 @@ export function GlobalLoader() {
 					<Spinner />
 				</ItemMedia>
 				<ItemContent>
-					<ItemTitle className="line-clamp-1">Loading...</ItemTitle>
+					<ItemTitle className="line-clamp-1">{message ?? "Loading..."}</ItemTitle>
 				</ItemContent>
 			</Item>
 		</div>

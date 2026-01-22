@@ -1,5 +1,6 @@
 import type { VolumePredictions } from "@/api/prediction";
 import { fetchPredictions } from "@/api/prediction";
+import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
 import { showError, showInfo, showSuccess } from "@/lib/toast";
 import { useCallback, useRef } from "react";
 import type { DicomPair } from "./viewerTypes";
@@ -14,6 +15,10 @@ type UsePredictionsControllerOptions = {
 };
 
 export function usePredictionsController(options: UsePredictionsControllerOptions) {
+	const { start, update, stop } = useGlobalLoader();
+	const loaderTokensRef = useRef<Map<string, string>>(new Map());
+	const makeRequestKey = (model: string, uid: string) => `${model}::${uid}`;
+
 	const { currentPairs, selectedModel, predictions, setPredictions, loadingPredictions, setLoadingPredictions } =
 		options;
 
@@ -22,16 +27,18 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 	const cancelAllPredictionRequests = useCallback(() => {
 		abortControllers.current.forEach((c) => c.abort());
 		abortControllers.current = [];
-	}, []);
+		loaderTokensRef.current.forEach((t) => stop(t));
+		loaderTokensRef.current.clear();
+	}, [stop]);
 
 	const isLoading = useCallback(
 		(model: string, sopInstanceUID: string) => loadingPredictions.get(model)?.has(sopInstanceUID) ?? false,
-		[loadingPredictions]
+		[loadingPredictions],
 	);
 
 	const hasPrediction = useCallback(
 		(model: string, sopInstanceUID: string) => predictions.get(model)?.has(sopInstanceUID) ?? false,
-		[predictions]
+		[predictions],
 	);
 
 	const tryFetchPredictions = useCallback(
@@ -45,7 +52,7 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 			if (!volume) {
 				showError(
 					"No volume file selected",
-					"Please select a valid DICOM volume file before loading predictions."
+					"Please select a valid DICOM volume file before loading predictions.",
 				);
 				return false;
 			}
@@ -58,6 +65,12 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 			}
 			if (isLoading(selectedModel, key)) {
 				return false;
+			}
+
+			const requestKey = makeRequestKey(selectedModel, key);
+			if (!loaderTokensRef.current.has(requestKey)) {
+				const t = start(`Predicting: ${file.name}`);
+				loaderTokensRef.current.set(requestKey, t);
 			}
 
 			setLoadingPredictions((prev) => {
@@ -103,16 +116,32 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 				});
 
 				abortControllers.current = abortControllers.current.filter((c) => c !== controller);
+
+				const loaderToken = loaderTokensRef.current.get(requestKey);
+				if (loaderToken) {
+					stop(loaderToken);
+					loaderTokensRef.current.delete(requestKey);
+				}
 			}
 		},
-		[selectedModel, currentPairs, setLoadingPredictions, setPredictions, hasPrediction, isLoading]
+		[
+			selectedModel,
+			currentPairs,
+			setLoadingPredictions,
+			setPredictions,
+			hasPrediction,
+			isLoading,
+			start,
+			update,
+			stop,
+		],
 	);
 
 	const predictCurrent = useCallback(
 		async (selectedPair: number) => {
 			return await tryFetchPredictions(selectedPair);
 		},
-		[tryFetchPredictions]
+		[tryFetchPredictions],
 	);
 
 	const predictAll = useCallback(async () => {

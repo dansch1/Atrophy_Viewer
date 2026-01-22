@@ -115,7 +115,7 @@ const FundusViewer: React.FC = () => {
 											key={`fundus-prediction-${i}-${j}`}
 											points={points.map((p) => `${p.x},${p.y}`).join(" ")}
 											fill={showScores ? scoreColor : color}
-											fillOpacity={0.3}
+											fillOpacity={1}
 											stroke={color}
 											strokeWidth={0.1}
 											className="cursor-pointer"

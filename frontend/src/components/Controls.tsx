@@ -59,7 +59,9 @@ const Controls: React.FC = () => {
 	const [predictionMenuOpen, setPredictionMenuOpen] = useState(false);
 
 	useEffect(() => {
-		if (!isPlaying) return;
+		if (!isPlaying) {
+			return;
+		}
 
 		if (currentPairs.length < 2) {
 			setIsPlaying(false);
@@ -79,13 +81,20 @@ const Controls: React.FC = () => {
 	}, [isPlaying, selectedPair, currentPairs.length, setSelectedPair]);
 
 	const hasSelection = !!(selectedModel && selectedVolume);
+
 	const isCurrentLoading = useMemo(() => {
-		if (!hasSelection) return false;
+		if (!hasSelection) {
+			return false;
+		}
+
 		return loadingPredictions.get(selectedModel)?.has(selectedVolume.sopInstanceUID) ?? false;
 	}, [hasSelection, loadingPredictions, selectedModel, selectedVolume]);
 
 	const hasPredictionForCurrent = useMemo(() => {
-		if (!hasSelection) return false;
+		if (!hasSelection) {
+			return false;
+		}
+
 		return predictions.get(selectedModel)?.has(selectedVolume.sopInstanceUID) ?? false;
 	}, [hasSelection, predictions, selectedModel, selectedVolume]);
 
@@ -185,8 +194,8 @@ const Controls: React.FC = () => {
 							{viewMode === "fundus"
 								? "Mode: Fundus"
 								: viewMode === "slice"
-								? "Mode: Volume"
-								: "Mode: Fundus & Volume"}
+									? "Mode: Volume"
+									: "Mode: Fundus & Volume"}
 						</p>
 					</TooltipContent>
 				</Tooltip>
@@ -271,7 +280,9 @@ const Controls: React.FC = () => {
 									onClick={async () => {
 										setPredictionMenuOpen(false);
 										const ok = await predictCurrent();
-										if (ok) setShowPredictions(true);
+										if (ok) {
+											setShowPredictions(true);
+										}
 									}}
 								>
 									Predict current
@@ -280,7 +291,9 @@ const Controls: React.FC = () => {
 									onClick={async () => {
 										setPredictionMenuOpen(false);
 										const results = await predictAll();
-										if (results[selectedPair]) setShowPredictions(true);
+										if (results[selectedPair]) {
+											setShowPredictions(true);
+										}
 									}}
 								>
 									Predict all

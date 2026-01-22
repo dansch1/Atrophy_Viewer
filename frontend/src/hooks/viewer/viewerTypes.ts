@@ -13,7 +13,6 @@ export type ViewMode = "fundus" | "slice" | "both";
 export type ViewerState = {
 	// Pairs
 	dicomPairs: DicomPairsByLaterality;
-	loadingPairs: boolean;
 	loadDicomPairs: (files: FileList) => Promise<void>;
 
 	// Patients
@@ -48,7 +47,6 @@ export type ViewerState = {
 	models: Map<string, string[]>;
 	selectedModel?: string;
 	setSelectedModel: (model: string) => void;
-	loadingModels: boolean;
 
 	// Labels
 	selectedModelLabels?: string[];

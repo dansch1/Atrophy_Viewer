@@ -1,5 +1,6 @@
 import { fetchModels } from "@/api/model";
 import type { VolumePredictions } from "@/api/prediction";
+import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import { ModelColors } from "@/lib/modelColors";
 import { postprocessVolume, type PostprocessParams } from "@/lib/postprocess";
@@ -12,17 +13,16 @@ import { useViewerNav } from "./useViewerNav";
 import type { DicomPairsByLaterality, ViewerState } from "./viewerTypes";
 
 export function useViewerState(): ViewerState {
-	// Nav reducer
+	const { start, stop } = useGlobalLoader();
 	const { nav, dispatch } = useViewerNav();
 
 	// Pairs
 	const setDicomPairs = (files: DicomPairsByLaterality) => dispatch({ type: "SET_DICOM_PAIRS", payload: files });
-	const { loadingPairs, loadDicomPairs } = useDicomImport(setDicomPairs);
+	const loadDicomPairs = useDicomImport(setDicomPairs);
 
 	// Models
 	const [models, setModels] = useState<Map<string, string[]>>(new Map());
 	const [selectedModel, setSelectedModel] = useState<string>();
-	const [loadingModels, setLoadingModels] = useState(false);
 
 	const selectedModelLabels = selectedModel ? models.get(selectedModel) : undefined;
 	const [hiddenLabels, setHiddenLabels] = useState<Set<number>>(new Set());
@@ -145,7 +145,8 @@ export function useViewerState(): ViewerState {
 	// Load models once
 	useEffect(() => {
 		const loadModels = async () => {
-			setLoadingModels(true);
+			const loaderToken = start("Loading models...");
+
 			try {
 				const map = await fetchModels();
 				setModels(map);
@@ -172,12 +173,12 @@ export function useViewerState(): ViewerState {
 				console.error("Model request failed", err);
 				showError("Model error", "Failed to load the models. Please reload the page or try again later.");
 			} finally {
-				setLoadingModels(false);
+				stop(loaderToken);
 			}
 		};
 
 		void loadModels();
-	}, [setModelColors]);
+	}, [setModelColors, start, stop]);
 
 	// Reset hidden labels when model labels change
 	useEffect(() => {
@@ -187,7 +188,6 @@ export function useViewerState(): ViewerState {
 	return {
 		// Files
 		dicomPairs: nav.dicomPairs,
-		loadingPairs,
 		loadDicomPairs,
 
 		// Patients
@@ -222,7 +222,6 @@ export function useViewerState(): ViewerState {
 		models,
 		selectedModel,
 		setSelectedModel,
-		loadingModels,
 
 		// Labels
 		selectedModelLabels,

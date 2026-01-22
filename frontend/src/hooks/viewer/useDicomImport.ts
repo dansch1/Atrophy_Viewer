@@ -1,30 +1,38 @@
+import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
 import { getDicomData, type DicomData } from "@/lib/dicom";
 import { showError, showSuccess } from "@/lib/toast";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import type { DicomPairsByLaterality } from "./viewerTypes";
 
 export function useDicomImport(setDicomPairs: (pairs: DicomPairsByLaterality) => void) {
-	const [loadingPairs, setLoadingPairs] = useState(false);
+	const { start, update, stop } = useGlobalLoader();
+
+	const loaderTokenRef = useRef<string | null>(null);
 	const uploadTokenRef = useRef(0);
 
 	const loadDicomPairs = async (files: FileList) => {
-		const token = ++uploadTokenRef.current;
-		setLoadingPairs(true);
+		loaderTokenRef.current = start("Parsing DICOM files...");
+		const uploadToken = ++uploadTokenRef.current;
 
 		try {
 			const fileArray = Array.from(files);
 
-			const parsed = await Promise.all(
-				fileArray.map((file) =>
-					getDicomData(file).catch((err) => {
-						console.error("Failed to read DICOM", { file, err });
-						return null;
-					})
-				)
-			);
+			const parsed: (DicomData | null)[] = [];
 
-			if (token !== uploadTokenRef.current) {
-				return;
+			for (let i = 0; i < fileArray.length; i++) {
+				if (uploadToken !== uploadTokenRef.current) {
+					return;
+				}
+
+				const file = fileArray[i];
+				update(loaderTokenRef.current!, `Parsing DICOM ${i + 1} / ${fileArray.length}: ${file.name}`);
+
+				try {
+					parsed.push(await getDicomData(file));
+				} catch (err) {
+					console.error("Failed to read DICOM", { file, err });
+					parsed.push(null);
+				}
 			}
 
 			const valid = parsed.filter((d): d is DicomData => d !== null);
@@ -77,7 +85,7 @@ export function useDicomImport(setDicomPairs: (pairs: DicomPairsByLaterality) =>
 				scans.R.sort((a, b) => a.volume.acquisitionDate.getTime() - b.volume.acquisitionDate.getTime());
 			}
 
-			if (token !== uploadTokenRef.current) {
+			if (uploadToken !== uploadTokenRef.current) {
 				return;
 			}
 
@@ -88,11 +96,12 @@ export function useDicomImport(setDicomPairs: (pairs: DicomPairsByLaterality) =>
 
 			showSuccess("DICOM files loaded successfully", `${total} scan(s) across ${patients} patient(s).`);
 		} finally {
-			if (token === uploadTokenRef.current) {
-				setLoadingPairs(false);
+			if (uploadToken === uploadTokenRef.current && loaderTokenRef.current) {
+				stop(loaderTokenRef.current);
+				loaderTokenRef.current = null;
 			}
 		}
 	};
 
-	return { loadingPairs, loadDicomPairs };
+	return loadDicomPairs;
 }
