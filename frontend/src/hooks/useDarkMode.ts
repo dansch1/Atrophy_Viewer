@@ -20,7 +20,7 @@ export function useDarkMode() {
 			}
 
 			return window.matchMedia("(prefers-color-scheme: dark)").matches;
-		})()
+		})(),
 	);
 
 	useEffect(() => {

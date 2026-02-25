@@ -279,9 +279,11 @@ const Controls: React.FC = () => {
 								<DropdownMenuItem
 									onClick={async () => {
 										setPredictionMenuOpen(false);
+										setShowPredictions(true);
+
 										const ok = await predictCurrent();
-										if (ok) {
-											setShowPredictions(true);
+										if (!ok) {
+											setShowPredictions(false);
 										}
 									}}
 								>
@@ -290,9 +292,11 @@ const Controls: React.FC = () => {
 								<DropdownMenuItem
 									onClick={async () => {
 										setPredictionMenuOpen(false);
+										setShowPredictions(true);
+
 										const results = await predictAll();
-										if (results[selectedPair]) {
-											setShowPredictions(true);
+										if (!results[selectedPair]) {
+											setShowPredictions(false);
 										}
 									}}
 								>

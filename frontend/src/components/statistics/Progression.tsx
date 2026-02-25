@@ -4,10 +4,8 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 import { useViewer } from "@/context/ViewerStateProvider";
 import type { PixelSpacing } from "@/lib/dicom";
 import { area } from "@/lib/postprocess";
-import { cn } from "@/lib/utils";
 import { useMemo } from "react";
-import { Legend, Line, LineChart, XAxis, YAxis } from "recharts";
-import { Button } from "../ui/button";
+import { Line, LineChart, XAxis, YAxis } from "recharts";
 
 const Progression: React.FC = () => {
 	const {
@@ -16,14 +14,13 @@ const Progression: React.FC = () => {
 		selectedModel,
 		selectedModelLabels,
 		hiddenLabels,
-		setHiddenLabels,
 		processedPredictions,
 		selectedModelColors,
 	} = useViewer();
 
 	const data = useMemo(() => {
 		if (!selectedModel || !selectedModelLabels) {
-			return [];
+			return null;
 		}
 
 		return currentPairs
@@ -33,6 +30,10 @@ const Progression: React.FC = () => {
 				const volumePredictions = processedPredictions.get(selectedModel)?.get(key);
 				const dateMs = volume.acquisitionDate.getTime();
 				const row: Record<string, number> = { date: dateMs };
+
+				if (!volumePredictions) {
+					return row;
+				}
 
 				for (let i = 0; i < selectedModelLabels?.length; i++) {
 					row[selectedModelLabels[i]] = sumAreaForClass(volumePredictions, i, volume.pixelSpacing);
@@ -46,7 +47,7 @@ const Progression: React.FC = () => {
 	function sumAreaForClass(
 		volumePredictions: VolumePredictions | undefined,
 		cls: number,
-		pixelSpacing: PixelSpacing
+		pixelSpacing: PixelSpacing,
 	): number {
 		if (!volumePredictions) {
 			return 0;
@@ -88,79 +89,51 @@ const Progression: React.FC = () => {
 		setSelectedPair(index);
 	};
 
-	const renderLegend = () => {
-		if (!selectedModelLabels) {
-			return null;
-		}
-
-		return (
-			<div className="flex flex-wrap justify-center w-full gap-2 mt-2 text-xs">
-				{selectedModelLabels.map((label, cls) => {
-					return (
-						<Button
-							key={cls}
-							variant="outline"
-							size="sm"
-							onClick={() => toggleLabel(cls)}
-							className={cn("gap-1 px-2 py-1 text-xs", hiddenLabels.has(cls) && "opacity-40")}
-						>
-							<span className="h-3 w-3 rounded-sm" style={{ backgroundColor: `var(--color-${label})` }} />
-							<span>{label}</span>
-						</Button>
-					);
-				})}
-			</div>
-		);
-	};
-
-	const toggleLabel = (label: number) => {
-		setHiddenLabels((prev) => {
-			const next = new Set(prev);
-			next.has(label) ? next.delete(label) : next.add(label);
-			return next;
-		});
-	};
-
 	return (
 		<Card className="h-full">
 			<CardHeader>
 				<CardTitle>Total lesion area per class (in µm²)</CardTitle>
 			</CardHeader>
 
-			{data.length > 0 && (
+			{data && (
 				<CardContent>
-					<ChartContainer config={chartConfig} className="w-full h-[300px] bg-secondary">
-						<LineChart data={data} onClick={handleChartClick}>
-							<XAxis
-								dataKey="date"
-								type="number"
-								domain={["auto", "auto"]}
-								tickFormatter={(ts) => new Date(ts).toDateString()}
-							/>
-							<YAxis />
-							<ChartTooltip content={<ChartTooltipContent />} />
-
-							<Legend
-								verticalAlign="top"
-								align="center"
-								wrapperStyle={{ width: "100%" }}
-								content={renderLegend}
-							/>
-
-							{selectedModelLabels?.map((label, cls) => (
-								<Line
-									key={cls}
-									dataKey={label}
-									type="monotone"
-									stroke={`var(--color-${label})`}
-									strokeWidth={2}
-									dot={{ r: 3 }}
-									isAnimationActive={false}
-									hide={hiddenLabels.has(cls)}
+					<div className="h-[300px] bg-secondary">
+						<ChartContainer className="w-full h-full" config={chartConfig}>
+							<LineChart data={data} onClick={handleChartClick}>
+								<XAxis
+									dataKey="date"
+									type="number"
+									scale="time"
+									domain={["auto", "auto"]}
+									tickFormatter={(ts) => new Date(ts).toDateString()}
 								/>
-							))}
-						</LineChart>
-					</ChartContainer>
+								<YAxis />
+								<ChartTooltip
+									content={
+										<ChartTooltipContent
+											labelFormatter={(_, payload) => {
+												const ts = payload?.[0]?.payload?.date;
+												return typeof ts === "number" ? new Date(ts).toDateString() : "";
+											}}
+										/>
+									}
+								/>
+
+								{selectedModelLabels?.map((label, cls) => (
+									<Line
+										key={cls}
+										dataKey={label}
+										type="monotone"
+										stroke={`var(--color-${label})`}
+										strokeWidth={2}
+										dot={{ r: 3 }}
+										isAnimationActive={false}
+										hide={hiddenLabels.has(cls)}
+									/>
+								))}
+							</LineChart>
+						</ChartContainer>
+					</div>
 				</CardContent>
 			)}
 		</Card>

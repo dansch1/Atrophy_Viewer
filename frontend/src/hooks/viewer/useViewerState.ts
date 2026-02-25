@@ -120,27 +120,29 @@ export function useViewerState(): ViewerState {
 		setPredictions(() => new Map());
 		setLoadingPredictions(() => new Map());
 		dispatch({ type: "SET_SHOW_PREDICTIONS", payload: false });
-	}, [nav.dicomPairs]);
+	}, [nav.dicomPairs, cancelAllPredictionRequests, dispatch]);
 
 	// On model change: cancel outstanding requests + hide overlay
 	useEffect(() => {
 		cancelAllPredictionRequests();
 		dispatch({ type: "SET_SHOW_PREDICTIONS", payload: false });
-	}, [selectedModel]);
+	}, [selectedModel, cancelAllPredictionRequests, dispatch]);
 
-	// Disable overlay if no cached predictions exist
+	// Disable overlay if no predictions exist
 	useEffect(() => {
-		if (!nav.showPredictions) return;
+		if (!nav.showPredictions) {
+			return;
+		}
 
 		const model = selectedModel;
 		const uid = selectedVolume?.sopInstanceUID;
 
-		const hasCached = !!model && !!uid && hasPrediction(model, uid);
+		const predicted = !!model && !!uid && (hasPrediction(model, uid) || loadingPredictions.get(model)?.has(uid));
 
-		if (!hasCached) {
+		if (!predicted) {
 			dispatch({ type: "SET_SHOW_PREDICTIONS", payload: false });
 		}
-	}, [nav.showPredictions, selectedModel, selectedVolume]);
+	}, [nav.showPredictions, selectedModel, selectedVolume, hasPrediction, loadingPredictions, dispatch]);
 
 	// Load models once
 	useEffect(() => {

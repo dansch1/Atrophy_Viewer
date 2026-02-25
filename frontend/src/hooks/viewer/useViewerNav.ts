@@ -117,7 +117,7 @@ function reducer(state: NavState, action: NavAction): NavState {
 				state.dicomPairs,
 				state.selectedPatient,
 				state.selectedLaterality,
-				selectedPair
+				selectedPair,
 			);
 			const selectedSlice = clamp(state.selectedSlice, 0, lastSlice);
 
@@ -129,7 +129,7 @@ function reducer(state: NavState, action: NavAction): NavState {
 				state.dicomPairs,
 				state.selectedPatient,
 				state.selectedLaterality,
-				state.selectedPair
+				state.selectedPair,
 			);
 			const selectedSlice = clamp(action.payload, 0, lastSlice);
 

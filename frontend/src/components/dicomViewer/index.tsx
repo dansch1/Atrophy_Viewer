@@ -1,8 +1,8 @@
 import { useViewer } from "@/context/ViewerStateProvider";
 import React from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
+import ToggleLegend from "../ToggleLegend";
 import FundusViewer from "./FundusViewer";
-import { LegendBox } from "./LegendBox";
 import SliceViewer from "./SliceViewer";
 import { ZoomControls } from "./ZoomControls";
 
@@ -25,7 +25,7 @@ const DicomViewer: React.FC = () => {
 	return (
 		<div className="relative w-full h-full" onWheel={handleWheel}>
 			<TransformWrapper centerOnInit minScale={0.5} maxScale={5} wheel={{ activationKeys: ["Control", "Meta"] }}>
-				<LegendBox />
+				<ToggleLegend variant="overlay" />
 				<ZoomControls />
 
 				{showDates && selectedVolume && (

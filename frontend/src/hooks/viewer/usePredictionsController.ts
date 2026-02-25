@@ -1,5 +1,5 @@
-import type { VolumePredictions } from "@/api/prediction";
-import { fetchPredictions } from "@/api/prediction";
+import type { SlicePredictions, VolumePredictions } from "@/api/prediction";
+import { streamPredictions } from "@/api/prediction";
 import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
 import { showError, showInfo, showSuccess } from "@/lib/toast";
 import { useCallback, useRef } from "react";
@@ -16,13 +16,12 @@ type UsePredictionsControllerOptions = {
 
 export function usePredictionsController(options: UsePredictionsControllerOptions) {
 	const { start, update, stop } = useGlobalLoader();
-	const loaderTokensRef = useRef<Map<string, string>>(new Map());
-	const makeRequestKey = (model: string, uid: string) => `${model}::${uid}`;
 
 	const { currentPairs, selectedModel, predictions, setPredictions, loadingPredictions, setLoadingPredictions } =
 		options;
 
 	const abortControllers = useRef<AbortController[]>([]);
+	const loaderTokensRef = useRef<Map<string, string>>(new Map());
 
 	const cancelAllPredictionRequests = useCallback(() => {
 		abortControllers.current.forEach((c) => c.abort());
@@ -41,6 +40,16 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 		[predictions],
 	);
 
+	const makeRequestKey = (model: string, uid: string) => `${model}::${uid}`;
+
+	const emptySlice = (): SlicePredictions => ({
+		boxes: [],
+		scores: [],
+		classes: [],
+	});
+
+	const createEmptyVolume = (total: number): VolumePredictions => Array.from({ length: total }, emptySlice);
+
 	const tryFetchPredictions = useCallback(
 		async (index: number) => {
 			if (!selectedModel) {
@@ -57,26 +66,27 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 				return false;
 			}
 
-			const key = volume.sopInstanceUID;
+			const uid = volume.sopInstanceUID;
 			const file = volume.file;
 
-			if (hasPrediction(selectedModel, key)) {
+			if (hasPrediction(selectedModel, uid)) {
 				return true;
 			}
-			if (isLoading(selectedModel, key)) {
+			if (isLoading(selectedModel, uid)) {
 				return false;
 			}
 
-			const requestKey = makeRequestKey(selectedModel, key);
+			const requestKey = makeRequestKey(selectedModel, uid);
 			if (!loaderTokensRef.current.has(requestKey)) {
 				const t = start(`Predicting: ${file.name}`);
 				loaderTokensRef.current.set(requestKey, t);
 			}
+			const loaderToken = loaderTokensRef.current.get(requestKey)!;
 
 			setLoadingPredictions((prev) => {
 				const next = new Map(prev);
 				const set = new Set(next.get(selectedModel) ?? []);
-				set.add(key);
+				set.add(uid);
 				next.set(selectedModel, set);
 				return next;
 			});
@@ -84,15 +94,50 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 			const controller = new AbortController();
 			abortControllers.current.push(controller);
 
-			try {
-				const data = await fetchPredictions(file, selectedModel, controller);
+			let completed = false;
+			let totalSlices: number = 0;
 
+			const setSlice = (i: number, pred: SlicePredictions) => {
 				setPredictions((prev) => {
 					const next = new Map(prev);
 					const perModel = new Map(next.get(selectedModel) ?? []);
-					perModel.set(key, data);
+					const existing = perModel.get(uid);
+					if (!existing) {
+						return prev;
+					}
+
+					const volumePreds = existing.slice();
+					volumePreds[i] = pred;
+
+					perModel.set(uid, volumePreds);
 					next.set(selectedModel, perModel);
 					return next;
+				});
+			};
+
+			try {
+				await streamPredictions(file, selectedModel, {
+					controller,
+					onMeta: ({ slices }) => {
+						totalSlices = slices;
+						update(loaderToken, `Loading model: ${selectedModel}`);
+
+						setPredictions((prev) => {
+							const next = new Map(prev);
+							const perModel = new Map(next.get(selectedModel) ?? []);
+							perModel.set(uid, createEmptyVolume(totalSlices));
+							next.set(selectedModel, perModel);
+							return next;
+						});
+					},
+					onSlice: (i, pred) => {
+						setSlice(i, pred);
+						update(loaderToken, `Predicting: ${file.name} (${i + 1}/${totalSlices})`);
+					},
+					onDone: () => {
+						completed = true;
+						update(loaderToken, `Finished predicting: ${file.name}`);
+					},
 				});
 
 				showSuccess("Prediction complete", `Predictions loaded for file: ${file.name}`);
@@ -107,19 +152,42 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 
 				return false;
 			} finally {
+				if (!completed) {
+					// remove partial/empty predictions so user can retry
+					setPredictions((prev) => {
+						const next = new Map(prev);
+						const perModel = new Map(next.get(selectedModel) ?? []);
+
+						perModel.delete(uid);
+						if (perModel.size === 0) {
+							next.delete(selectedModel);
+						} else {
+							next.set(selectedModel, perModel);
+						}
+
+						return next;
+					});
+				}
+
 				setLoadingPredictions((prev) => {
 					const next = new Map(prev);
 					const set = new Set(next.get(selectedModel) ?? []);
-					set.delete(key);
-					next.set(selectedModel, set);
+
+					set.delete(uid);
+					if (set.size === 0) {
+						next.delete(selectedModel);
+					} else {
+						next.set(selectedModel, set);
+					}
+
 					return next;
 				});
 
 				abortControllers.current = abortControllers.current.filter((c) => c !== controller);
 
-				const loaderToken = loaderTokensRef.current.get(requestKey);
-				if (loaderToken) {
-					stop(loaderToken);
+				const t = loaderTokensRef.current.get(requestKey);
+				if (t) {
+					stop(t);
 					loaderTokensRef.current.delete(requestKey);
 				}
 			}

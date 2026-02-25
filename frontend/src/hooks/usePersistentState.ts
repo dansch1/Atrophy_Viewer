@@ -6,7 +6,7 @@ export function usePersistentState<T>(
 	options?: {
 		serialize?: (value: T) => string;
 		deserialize?: (stored: string) => T;
-	}
+	},
 ): [T, React.Dispatch<React.SetStateAction<T>>] {
 	const { serialize = JSON.stringify, deserialize = JSON.parse } = options ?? {};
 

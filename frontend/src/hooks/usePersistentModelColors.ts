@@ -8,7 +8,7 @@ export function usePersistentModelColors(key: string) {
 		{
 			serialize: (state) =>
 				JSON.stringify(
-					Object.fromEntries(Object.entries(state).map(([modelName, map]) => [modelName, map.toJSON()]))
+					Object.fromEntries(Object.entries(state).map(([modelName, map]) => [modelName, map.toJSON()])),
 				),
 			deserialize: (stored) => {
 				const parsed = JSON.parse(stored) as Record<string, { labels: string[]; colors: string[] }>;
@@ -20,6 +20,6 @@ export function usePersistentModelColors(key: string) {
 
 				return result;
 			},
-		}
+		},
 	);
 }

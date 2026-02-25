@@ -51,7 +51,7 @@ export function SettingsDialog() {
 					return updated;
 				});
 			}),
-		[setModelColors]
+		[setModelColors],
 	);
 
 	useEffect(() => {

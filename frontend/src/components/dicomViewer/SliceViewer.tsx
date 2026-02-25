@@ -64,6 +64,7 @@ const SliceViewer: React.FC = () => {
 
 							const color = selectedModelColors.getColorByIndex(cls);
 							const score = processedSlicePredictions.scores[i];
+							const path = processedSlicePredictions.paths?.[i];
 
 							return (
 								<g key={`slice-prediction-${i}`}>
@@ -92,6 +93,18 @@ const SliceViewer: React.FC = () => {
 											{score.toFixed(2)}
 										</text>
 									)}
+
+									{path &&
+										path.map((d) => (
+											<path
+												d={d}
+												fill={color}
+												fillOpacity={0.3}
+												stroke={color}
+												strokeWidth={0.8}
+												vectorEffect="non-scaling-stroke"
+											/>
+										))}
 								</g>
 							);
 						})}

@@ -39,7 +39,13 @@ export function postprocessSlice(slice: SlicePredictions, p: PostprocessParams):
 	}
 
 	if (idx.length === 0) {
-		return { boxes: [], scores: [], classes: [] };
+		return {
+			boxes: [],
+			scores: [],
+			classes: [],
+			masks: slice.masks ? [] : undefined,
+			paths: slice.paths ? [] : undefined,
+		};
 	}
 
 	idx.sort((a, b) => slice.scores[b] - slice.scores[a]);
@@ -80,6 +86,8 @@ export function postprocessSlice(slice: SlicePredictions, p: PostprocessParams):
 		boxes: kept.map((i) => slice.boxes[i]),
 		scores: kept.map((i) => slice.scores[i]),
 		classes: kept.map((i) => slice.classes[i]),
+		masks: slice.masks ? kept.map((i) => slice.masks![i]) : undefined,
+		paths: slice.paths ? kept.map((i) => slice.paths![i]) : undefined,
 	};
 }
 
