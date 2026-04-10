@@ -1,12 +1,12 @@
-import type { Box } from "@/api/prediction";
+import type { Box, Contour, Contours } from "@/api/prediction";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useViewer } from "@/context/ViewerStateProvider";
+import { hasValidContours, isValidContour } from "@/lib/contours";
 import type { SlicePosition } from "@/lib/dicom";
-import React, { useMemo } from "react";
-
 import { dot, mid } from "@/lib/vec2";
-import { Bounds, GizmoHelper, GizmoViewport, OrbitControls } from "@react-three/drei";
+import { Bounds, GizmoHelper, GizmoViewport, Line, OrbitControls } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
+import React, { useMemo } from "react";
 import * as THREE from "three";
 
 const Lesion3DView: React.FC = () => {
@@ -27,7 +27,8 @@ const Lesion3DView: React.FC = () => {
 			items: sp.boxes.map((box, j) => ({
 				box,
 				cls: sp.classes[j],
-				key: `box-${i}-${j}`,
+				contours: sp.contours?.[j] ?? null,
+				key: `prediction-${i}-${j}`,
 			})),
 		}));
 	}, [selectedVolume, processedVolumePredictions]);
@@ -46,7 +47,21 @@ const Lesion3DView: React.FC = () => {
 		return dot(mi.x - m0.x, mi.y - m0.y, dx, dy);
 	}
 
-	const LesionMesh: React.FC<{
+	const LesionPrediction: React.FC<{
+		box: Box;
+		contours: Contours | null;
+		cols: number;
+		rows: number;
+		color: string;
+	}> = ({ box, contours, cols, rows, color }) => {
+		return hasValidContours(contours) ? (
+			<LesionContourLines contours={contours} cols={cols} rows={rows} color={color} />
+		) : (
+			<LesionBoxMesh box={box} cols={cols} rows={rows} color={color} />
+		);
+	};
+
+	const LesionBoxMesh: React.FC<{
 		box: Box;
 		cols: number;
 		rows: number;
@@ -68,16 +83,16 @@ const Lesion3DView: React.FC = () => {
 		);
 	};
 
-	function getBoxShape(box: Box, cols: number, rows: number) {
+	function getBoxShape(box: Box, cols: number, rows: number): THREE.Shape {
 		const [x1, y1, x2, y2] = box;
 
-		const cx = (cols - 1) / 2;
-		const cy = (rows - 1) / 2;
+		const p1 = pointToWorld(x1, y1, cols, rows);
+		const p2 = pointToWorld(x2, y2, cols, rows);
 
-		const left = cx - x1;
-		const right = cx - x2;
-		const top = -(y1 - cy);
-		const bottom = -(y2 - cy);
+		const left = Math.min(p1.x, p2.x);
+		const right = Math.max(p1.x, p2.x);
+		const top = Math.max(p1.y, p2.y);
+		const bottom = Math.min(p1.y, p2.y);
 
 		const shape = new THREE.Shape();
 		shape.moveTo(left, top);
@@ -86,6 +101,51 @@ const Lesion3DView: React.FC = () => {
 		shape.lineTo(left, bottom);
 		shape.closePath();
 		return shape;
+	}
+
+	function pointToWorld(x: number, y: number, cols: number, rows: number): THREE.Vector2 {
+		const cx = (cols - 1) / 2;
+		const cy = (rows - 1) / 2;
+
+		return new THREE.Vector2(cx - x, cy - y);
+	}
+
+	const LesionContourLines: React.FC<{
+		contours: Contours;
+		cols: number;
+		rows: number;
+		color: string;
+	}> = ({ contours, cols, rows, color }) => {
+		const lines = useMemo(
+			() => contours.filter(isValidContour).map((contour) => contourToWorld(contour, cols, rows)),
+			[contours, cols, rows],
+		);
+
+		if (!lines.length) {
+			return null;
+		}
+
+		return (
+			<group>
+				{lines.map((points, i) => (
+					<Line key={`contour-${i}`} points={points} color={color} transparent opacity={0.95} />
+				))}
+			</group>
+		);
+	};
+
+	function contourToWorld(contour: Contour, cols: number, rows: number): THREE.Vector2[] {
+		if (contour.length < 3) {
+			return [];
+		}
+
+		const points = contour.map(([x, y]) => {
+			const p = pointToWorld(x, y, cols, rows);
+			return new THREE.Vector2(p.x, p.y);
+		});
+
+		points.push(points[0].clone());
+		return points;
 	}
 
 	return (
@@ -104,13 +164,14 @@ const Lesion3DView: React.FC = () => {
 							<Bounds fit clip margin={1.2}>
 								<group>
 									{data.map((slice, i) => (
-										<group key={`slice-${i}`} position={[0, 0, slice.z]}>
+										<group key={`lesion-${i}`} position={[0, 0, slice.z]}>
 											{slice.items
 												.filter((it) => !hiddenLabels.has(it.cls))
 												.map((it) => (
-													<LesionMesh
+													<LesionPrediction
 														key={it.key}
 														box={it.box}
+														contours={it.contours}
 														cols={selectedVolume.cols}
 														rows={selectedVolume.rows}
 														color={selectedModelColors.getColorByIndex(it.cls)}

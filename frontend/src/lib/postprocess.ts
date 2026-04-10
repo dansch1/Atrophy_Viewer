@@ -44,7 +44,7 @@ export function postprocessSlice(slice: SlicePredictions, p: PostprocessParams):
 			scores: [],
 			classes: [],
 			masks: slice.masks ? [] : undefined,
-			paths: slice.paths ? [] : undefined,
+			contours: slice.contours ? [] : undefined,
 		};
 	}
 
@@ -87,7 +87,7 @@ export function postprocessSlice(slice: SlicePredictions, p: PostprocessParams):
 		scores: kept.map((i) => slice.scores[i]),
 		classes: kept.map((i) => slice.classes[i]),
 		masks: slice.masks ? kept.map((i) => slice.masks![i]) : undefined,
-		paths: slice.paths ? kept.map((i) => slice.paths![i]) : undefined,
+		contours: slice.contours ? kept.map((i) => slice.contours![i]) : undefined,
 	};
 }
 

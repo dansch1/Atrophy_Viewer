@@ -38,7 +38,7 @@ const FundusViewer: React.FC = () => {
 		xStart: number,
 		xEnd: number,
 		slices: SlicePosition[],
-		cols: number
+		cols: number,
 	): [Pt, Pt, Pt, Pt] {
 		const { p0, p1 } = slices[i];
 
@@ -103,7 +103,7 @@ const FundusViewer: React.FC = () => {
 										xStart,
 										xEnd,
 										selectedVolume.slicePositions,
-										selectedVolume.cols
+										selectedVolume.cols,
 									);
 
 									const color = selectedModelColors.getColorByIndex(cls);
@@ -112,7 +112,7 @@ const FundusViewer: React.FC = () => {
 
 									return (
 										<polygon
-											key={`fundus-prediction-${i}-${j}`}
+											key={`fundus-${i}-${j}`}
 											points={points.map((p) => `${p.x},${p.y}`).join(" ")}
 											fill={showScores ? scoreColor : color}
 											fillOpacity={1}
@@ -122,7 +122,7 @@ const FundusViewer: React.FC = () => {
 											onClick={() => console.log("Clicked", { sliceIndex: i, detIndex: j, cls })}
 										/>
 									);
-								})
+								}),
 							)}
 						</g>
 					</svg>

@@ -76,9 +76,12 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 				return false;
 			}
 
+			const controller = new AbortController();
+			abortControllers.current.push(controller);
+
 			const requestKey = makeRequestKey(selectedModel, uid);
 			if (!loaderTokensRef.current.has(requestKey)) {
-				const t = start(`Predicting: ${file.name}`);
+				const t = start(`Predicting: ${file.name}`, () => controller.abort());
 				loaderTokensRef.current.set(requestKey, t);
 			}
 			const loaderToken = loaderTokensRef.current.get(requestKey)!;
@@ -90,9 +93,6 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 				next.set(selectedModel, set);
 				return next;
 			});
-
-			const controller = new AbortController();
-			abortControllers.current.push(controller);
 
 			let completed = false;
 			let totalSlices: number = 0;
@@ -183,13 +183,13 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 					return next;
 				});
 
-				abortControllers.current = abortControllers.current.filter((c) => c !== controller);
-
 				const t = loaderTokensRef.current.get(requestKey);
 				if (t) {
 					stop(t);
 					loaderTokensRef.current.delete(requestKey);
 				}
+
+				abortControllers.current = abortControllers.current.filter((c) => c !== controller);
 			}
 		},
 		[

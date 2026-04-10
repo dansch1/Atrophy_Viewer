@@ -1,9 +1,11 @@
+import { Button } from "@/components/ui/button";
 import { Item, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { Spinner } from "@/components/ui/spinner";
 import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
+import { X } from "lucide-react";
 
 export function GlobalLoader() {
-	const { isLoading, message } = useGlobalLoader();
+	const { isLoading, message, canCancel, cancelCurrent } = useGlobalLoader();
 
 	if (!isLoading) {
 		return null;
@@ -18,6 +20,11 @@ export function GlobalLoader() {
 				<ItemContent>
 					<ItemTitle className="line-clamp-1">{message ?? "Loading..."}</ItemTitle>
 				</ItemContent>
+				{canCancel && (
+					<Button variant="ghost" size="icon" onClick={cancelCurrent}>
+						<X className="w-4 h-4" />
+					</Button>
+				)}
 			</Item>
 		</div>
 	);

@@ -1,4 +1,5 @@
 import { useViewer } from "@/context/ViewerStateProvider";
+import { contourToSvgPath, hasValidContours } from "@/lib/contours";
 import { renderDicom } from "@/lib/dicom";
 import { clamp } from "@/lib/utils";
 import React, { useEffect, useRef } from "react";
@@ -58,32 +59,50 @@ const SliceViewer: React.FC = () => {
 							const w = Math.max(0, clamp(Math.max(x1, x2), 0, selectedVolume.cols) - x);
 							const h = Math.max(0, clamp(Math.max(y1, y2), 0, selectedVolume.rows) - y);
 
-							if (w === 0 || h === 0) {
+							const color = selectedModelColors.getColorByIndex(cls);
+							const score = processedSlicePredictions.scores[i];
+							const contours = processedSlicePredictions.contours?.[i];
+							const showContours = hasValidContours(contours);
+
+							if ((w === 0 || h === 0) && !showContours) {
 								return null;
 							}
 
-							const color = selectedModelColors.getColorByIndex(cls);
-							const score = processedSlicePredictions.scores[i];
-							const path = processedSlicePredictions.paths?.[i];
-
 							return (
-								<g key={`slice-prediction-${i}`}>
-									<rect
-										x={x}
-										y={y}
-										width={w}
-										height={h}
-										fill={color}
-										fillOpacity={0.3}
-										stroke={color}
-										strokeWidth={0.8}
-										vectorEffect="non-scaling-stroke"
-									/>
+								<g key={`slice-${i}`}>
+									{showContours ? (
+										contours.map((contour, j) => {
+											const d = contourToSvgPath(contour);
+											return d ? (
+												<path
+													key={`prediction-${i}-${j}`}
+													d={d}
+													fill={color}
+													fillOpacity={0.3}
+													stroke={color}
+													strokeWidth={0.8}
+													vectorEffect="non-scaling-stroke"
+												/>
+											) : null;
+										})
+									) : (
+										<rect
+											x={x}
+											y={y}
+											width={w}
+											height={h}
+											fill={color}
+											fillOpacity={0.3}
+											stroke={color}
+											strokeWidth={0.8}
+											vectorEffect="non-scaling-stroke"
+										/>
+									)}
 
 									{showScores && (
 										<text
-											x={x}
-											y={Math.max(0, y - 2)}
+											x={x + 10}
+											y={y + 20}
 											fontSize={12}
 											fill={color}
 											textAnchor="start"
@@ -93,18 +112,6 @@ const SliceViewer: React.FC = () => {
 											{score.toFixed(2)}
 										</text>
 									)}
-
-									{path &&
-										path.map((d) => (
-											<path
-												d={d}
-												fill={color}
-												fillOpacity={0.3}
-												stroke={color}
-												strokeWidth={0.8}
-												vectorEffect="non-scaling-stroke"
-											/>
-										))}
 								</g>
 							);
 						})}

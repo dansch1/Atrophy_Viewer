@@ -8,12 +8,16 @@ const MaskSchema = z.object({
 	counts: z.array(z.number()),
 });
 
+const PointSchema = z.tuple([z.number(), z.number()]);
+const ContourSchema = z.array(PointSchema);
+const ContoursSchema = z.array(ContourSchema);
+
 const ModelPredictionSchema = z.object({
 	boxes: z.array(BoxSchema),
 	scores: z.array(z.number()),
 	classes: z.array(z.number()),
 	masks: z.array(MaskSchema).optional(),
-	paths: z.array(z.array(z.string())).optional(),
+	contours: z.array(ContoursSchema).optional(),
 });
 
 const PredictionResponseSchema = z.object({
@@ -31,6 +35,9 @@ const StreamMsgSchema = z.discriminatedUnion("type", [
 
 export type Box = z.infer<typeof BoxSchema>;
 export type Mask = z.infer<typeof MaskSchema>;
+export type Point = z.infer<typeof PointSchema>;
+export type Contour = z.infer<typeof ContourSchema>;
+export type Contours = z.infer<typeof ContoursSchema>;
 export type SlicePredictions = z.infer<typeof ModelPredictionSchema>;
 export type VolumePredictions = SlicePredictions[];
 

@@ -18,6 +18,8 @@ const Header = () => {
 		if (e.target.files && e.target.files.length > 0) {
 			onFileUpload(e.target.files);
 		}
+
+		e.target.value = "";
 	};
 
 	const handleDrop = (e: DragEvent<HTMLDivElement>) => {

@@ -1,6 +1,6 @@
 import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
 import { getDicomData, type DicomData } from "@/lib/dicom";
-import { showError, showSuccess } from "@/lib/toast";
+import { showError, showInfo, showSuccess } from "@/lib/toast";
 import { useRef } from "react";
 import type { DicomPairsByLaterality } from "./viewerTypes";
 
@@ -10,13 +10,23 @@ export function useDicomImport(setDicomPairs: (pairs: DicomPairsByLaterality) =>
 	const loaderTokenRef = useRef<string | null>(null);
 	const uploadTokenRef = useRef(0);
 
+	const cancelImport = () => {
+		uploadTokenRef.current += 1;
+
+		if (loaderTokenRef.current) {
+			stop(loaderTokenRef.current);
+			loaderTokenRef.current = null;
+		}
+
+		showInfo("Import cancelled", "The DICOM import was cancelled.");
+	};
+
 	const loadDicomPairs = async (files: FileList) => {
-		loaderTokenRef.current = start("Parsing DICOM files...");
 		const uploadToken = ++uploadTokenRef.current;
+		loaderTokenRef.current = start("Parsing DICOM files...", cancelImport);
 
 		try {
 			const fileArray = Array.from(files);
-
 			const parsed: (DicomData | null)[] = [];
 
 			for (let i = 0; i < fileArray.length; i++) {
