@@ -1,73 +1,57 @@
 import { z } from "zod";
 import { fetchWithTimeout } from "./http";
+import { ModelTaskSchema, type ModelTask } from "./model";
 
 const BoxSchema = z.tuple([z.number(), z.number(), z.number(), z.number()]);
 
-const MaskSchema = z.object({
-	size: z.tuple([z.number(), z.number()]),
-	counts: z.array(z.number()),
-});
-
-const PointSchema = z.tuple([z.number(), z.number()]);
-const ContourSchema = z.array(PointSchema);
-const ContoursSchema = z.array(ContourSchema);
-
-const ModelPredictionSchema = z.object({
+const DetectionPredictionSchema = z.object({
+	kind: z.literal("detection"),
 	boxes: z.array(BoxSchema),
 	scores: z.array(z.number()),
-	classes: z.array(z.number()),
-	masks: z.array(MaskSchema).optional(),
-	contours: z.array(ContoursSchema).optional(),
+	classes: z.array(z.number().int()),
 });
 
-const PredictionResponseSchema = z.object({
-	model: z.string(),
-	slices: z.number(),
-	results: z.array(ModelPredictionSchema),
+const ClassPredictionSchema = z.object({
+	kind: z.literal("class"),
+	scores: z.array(z.number()),
 });
+
+const SlicePredictionSchema = z.discriminatedUnion("kind", [DetectionPredictionSchema, ClassPredictionSchema]);
 
 const StreamMsgSchema = z.discriminatedUnion("type", [
-	z.object({ type: z.literal("meta"), model: z.string(), slices: z.number() }),
-	z.object({ type: z.literal("slice"), i: z.number(), pred: ModelPredictionSchema }),
-	z.object({ type: z.literal("done") }),
-	z.object({ type: z.literal("error"), message: z.string().optional() }),
+	z.object({
+		type: z.literal("meta"),
+		model: z.string(),
+		task: ModelTaskSchema,
+		slices: z.number().int(),
+	}),
+	z.object({
+		type: z.literal("slice"),
+		i: z.number().int(),
+		pred: SlicePredictionSchema,
+	}),
+	z.object({
+		type: z.literal("done"),
+	}),
+	z.object({
+		type: z.literal("error"),
+		message: z.string().optional(),
+	}),
 ]);
 
 export type Box = z.infer<typeof BoxSchema>;
-export type Mask = z.infer<typeof MaskSchema>;
-export type Point = z.infer<typeof PointSchema>;
-export type Contour = z.infer<typeof ContourSchema>;
-export type Contours = z.infer<typeof ContoursSchema>;
-export type SlicePredictions = z.infer<typeof ModelPredictionSchema>;
-export type VolumePredictions = SlicePredictions[];
 
-export async function fetchPredictions(
-	file: File,
-	model: string,
-	controller?: AbortController,
-): Promise<VolumePredictions> {
-	const formData = new FormData();
-	formData.append("file", file);
-	formData.append("model", model);
+export type DetectionPrediction = z.infer<typeof DetectionPredictionSchema>;
+export type ClassPrediction = z.infer<typeof ClassPredictionSchema>;
 
-	const response = await fetchWithTimeout(
-		`${import.meta.env.VITE_API_BASE}/predict`,
-		{
-			method: "POST",
-			body: formData,
-		},
-		controller,
-	);
+export type SlicePrediction = z.infer<typeof SlicePredictionSchema>;
+export type VolumePrediction = Array<SlicePrediction | null>;
 
-	if (!response.ok) {
-		const text = await response.text();
-		throw new Error(`HTTP ${response.status}: ${text}`);
-	}
-
-	const data = await response.json();
-
-	return PredictionResponseSchema.parse(data).results;
-}
+export type PredictionMeta = {
+	model: string;
+	task: ModelTask;
+	slices: number;
+};
 
 export async function streamPredictions(
 	file: File,
@@ -75,8 +59,8 @@ export async function streamPredictions(
 	opts?: {
 		controller?: AbortController;
 		slices?: number[];
-		onMeta?: (meta: { model: string; slices: number }) => void;
-		onSlice?: (i: number, pred: SlicePredictions) => void;
+		onMeta?: (meta: PredictionMeta) => void;
+		onSlice?: (i: number, pred: SlicePrediction) => void;
 		onDone?: () => void;
 		onError?: (message: string) => void;
 	},
@@ -133,7 +117,11 @@ export async function streamPredictions(
 			const msg = StreamMsgSchema.parse(raw);
 
 			if (msg.type === "meta") {
-				opts?.onMeta?.({ model: msg.model, slices: msg.slices });
+				opts?.onMeta?.({
+					model: msg.model,
+					task: msg.task,
+					slices: msg.slices,
+				});
 			} else if (msg.type === "slice") {
 				opts?.onSlice?.(msg.i, msg.pred);
 			} else if (msg.type === "done") {

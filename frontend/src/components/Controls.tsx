@@ -226,14 +226,11 @@ const Controls: React.FC = () => {
 								No models available
 							</SelectItem>
 						) : (
-							[...models.keys()].map((name) => {
-								const displayName = name.replace(/\.[^/.]+$/, "");
-								return (
-									<SelectItem key={name} value={name}>
-										{displayName}
-									</SelectItem>
-								);
-							})
+							[...models].map(([modelId, modelInfo]) => (
+								<SelectItem key={modelId} value={modelId}>
+									{modelInfo.name}
+								</SelectItem>
+							))
 						)}
 					</SelectContent>
 				</Select>
@@ -317,7 +314,7 @@ const Controls: React.FC = () => {
 							variant={showStats ? "default" : "outline"}
 							size="icon"
 							onClick={() => setShowStats(!showStats)}
-							disabled={currentPairs.length === 0}
+							disabled={!selectedModel || currentPairs.length === 0}
 						>
 							<BarChart3 className="w-4 h-4" />
 						</Button>

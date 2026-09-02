@@ -1,11 +1,11 @@
-import { fetchModels } from "@/api/model";
-import type { VolumePredictions } from "@/api/prediction";
+import { fetchModels, type ModelMap } from "@/api/model";
+import type { VolumePrediction } from "@/api/prediction";
 import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import { ModelColors } from "@/lib/modelColors";
-import { postprocessVolume, type PostprocessParams } from "@/lib/postprocess";
+import { createPostprocConfig, postprocessVolume, type PostprocConfig } from "@/lib/postprocess";
 import { showError } from "@/lib/toast";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type SetStateAction } from "react";
 import { usePersistentModelColors } from "../usePersistentModelColors";
 import { useDicomImport } from "./useDicomImport";
 import { usePredictionsController } from "./usePredictionsController";
@@ -21,14 +21,15 @@ export function useViewerState(): ViewerState {
 	const loadDicomPairs = useDicomImport(setDicomPairs);
 
 	// Models
-	const [models, setModels] = useState<Map<string, string[]>>(new Map());
+	const [models, setModels] = useState<ModelMap>(new Map());
 	const [selectedModel, setSelectedModel] = useState<string>();
 
-	const selectedModelLabels = selectedModel ? models.get(selectedModel) : undefined;
-	const [hiddenLabels, setHiddenLabels] = useState<Set<number>>(new Set());
+	const selectedModelInfo = selectedModel ? models.get(selectedModel) : undefined;
+	const selectedModelClasses = selectedModelInfo?.classes;
+	const [hiddenClasses, setHiddenClasses] = useState<Set<number>>(new Set());
 
 	// Predictions
-	const [predictions, setPredictions] = useState<Map<string, Map<string, VolumePredictions>>>(new Map());
+	const [predictions, setPredictions] = useState<Map<string, Map<string, VolumePrediction>>>(new Map());
 	const [loadingPredictions, setLoadingPredictions] = useState<Map<string, Set<string>>>(new Map());
 
 	// Stats
@@ -39,15 +40,38 @@ export function useViewerState(): ViewerState {
 	const [showFilenames, setShowFilenames] = usePersistentState("viewer:showFilenames", true);
 	const [showScores, setShowScores] = usePersistentState("viewer:showScores", false);
 
-	const [postParameters, setPostParameters] = usePersistentState<PostprocessParams>("viewer:postParameters", {
-		scoreThreshold: 0.5,
-		nmsIouThreshold: 0.5,
-		topK: 100,
-	});
+	const [postprocessByModel, setPostprocessByModel] = usePersistentState<Record<string, PostprocConfig>>(
+		"viewer:postprocessByModel",
+		{},
+	);
+
+	const selectedPostprocConfig = useMemo(() => {
+		if (!selectedModel || !selectedModelInfo) {
+			return undefined;
+		}
+
+		return postprocessByModel[selectedModel] ?? createPostprocConfig(selectedModelInfo);
+	}, [selectedModel, selectedModelInfo, postprocessByModel]);
+
+	const setSelectedPostprocConfig = (update: SetStateAction<PostprocConfig>) => {
+		if (!selectedModel || !selectedModelInfo) {
+			return;
+		}
+
+		setPostprocessByModel((prev) => {
+			const current = prev[selectedModel] ?? createPostprocConfig(selectedModelInfo);
+			const next = typeof update === "function" ? update(current) : update;
+
+			return {
+				...prev,
+				[selectedModel]: next,
+			};
+		});
+	};
 
 	const [modelColors, setModelColors] = usePersistentModelColors("viewer:modelColors");
-	const emptyLabelColors = useMemo(() => new ModelColors([], []), []);
-	const selectedModelColors = selectedModel ? modelColors[selectedModel] : emptyLabelColors;
+	const emptyClassColors = useMemo(() => new ModelColors([], []), []);
+	const selectedModelColors = selectedModel ? modelColors[selectedModel] : emptyClassColors;
 
 	// Derived
 	// Patients
@@ -67,42 +91,45 @@ export function useViewerState(): ViewerState {
 
 	// Pairs
 	const currentPairs = useMemo(() => {
-		if (!nav.selectedPatient) return [];
+		if (!nav.selectedPatient) {
+			return [];
+		}
+
 		return nav.dicomPairs[nav.selectedPatient]?.[nav.selectedLaterality] ?? [];
 	}, [nav.dicomPairs, nav.selectedPatient, nav.selectedLaterality]);
 
 	const selectedVolume = currentPairs[nav.selectedPair]?.volume;
 	const selectedFundus = currentPairs[nav.selectedPair]?.fundus;
 
-	// Predictions (raw)
-	const selectedVolumePredictions =
-		selectedModel && selectedVolume
-			? predictions.get(selectedModel)?.get(selectedVolume.sopInstanceUID)
-			: undefined;
-
-	// const selectedSlicePredictions = selectedVolumePredictions?.[nav.selectedSlice];
-
 	// Predictions (processed)
 	const processedPredictions = useMemo(() => {
-		const out = new Map<string, Map<string, VolumePredictions>>();
+		const result = new Map<string, Map<string, VolumePrediction>>();
 
-		for (const [modelName, volumesMap] of predictions) {
-			const processedVolumes = new Map<string, VolumePredictions>();
-			for (const [sopInstanceUID, volumePreds] of volumesMap) {
-				processedVolumes.set(sopInstanceUID, postprocessVolume(volumePreds, postParameters));
+		for (const [modelId, volumes] of predictions) {
+			const modelInfo = models.get(modelId);
+			if (!modelInfo) {
+				continue;
 			}
 
-			out.set(modelName, processedVolumes);
+			const settings = postprocessByModel[modelId] ?? createPostprocConfig(modelInfo);
+			const processedVolumes = new Map<string, VolumePrediction>();
+
+			for (const [sopInstanceUID, volumePrediction] of volumes) {
+				processedVolumes.set(sopInstanceUID, postprocessVolume(volumePrediction, settings));
+			}
+
+			result.set(modelId, processedVolumes);
 		}
 
-		return out;
-	}, [predictions, postParameters]);
+		return result;
+	}, [predictions, models, postprocessByModel]);
 
-	const processedVolumePredictions = useMemo(() => {
-		return selectedVolumePredictions ? postprocessVolume(selectedVolumePredictions, postParameters) : undefined;
-	}, [selectedVolumePredictions, postParameters]);
+	const processedVolumePrediction =
+		selectedModel && selectedVolume
+			? processedPredictions.get(selectedModel)?.get(selectedVolume.sopInstanceUID)
+			: undefined;
 
-	const processedSlicePredictions = processedVolumePredictions?.[nav.selectedSlice];
+	const processedSlicePrediction = processedVolumePrediction?.[nav.selectedSlice] ?? undefined;
 
 	// Prediction controller
 	const { cancelAllPredictionRequests, hasPrediction, predictCurrent, predictAll } = usePredictionsController({
@@ -156,16 +183,16 @@ export function useViewerState(): ViewerState {
 				setModelColors((prev) => {
 					const updated = { ...prev };
 
-					for (const [name, classes] of map) {
-						if (!updated[name]) {
-							updated[name] = new ModelColors(classes);
-							continue;
-						}
+					for (const [modelId, modelInfo] of map) {
+						const existing = updated[modelId];
 
-						for (let i = 0; i < classes.length; i++) {
-							if (updated[name].getColorByIndex(i) === undefined) {
-								updated[name].setColorByIndex(i);
-							}
+						const existingClasses = existing?.toJSON().classes ?? [];
+						const classesChanged =
+							existingClasses.length !== modelInfo.classes.length ||
+							existingClasses.some((className, index) => className !== modelInfo.classes[index]);
+
+						if (!existing || classesChanged) {
+							updated[modelId] = new ModelColors(modelInfo.classes);
 						}
 					}
 
@@ -182,10 +209,10 @@ export function useViewerState(): ViewerState {
 		void loadModels();
 	}, [setModelColors, start, stop]);
 
-	// Reset hidden labels when model labels change
+	// Reset hidden classes when model changes
 	useEffect(() => {
-		setHiddenLabels(() => new Set());
-	}, [selectedModelLabels]);
+		setHiddenClasses(() => new Set());
+	}, [selectedModel]);
 
 	return {
 		// Files
@@ -223,20 +250,21 @@ export function useViewerState(): ViewerState {
 		// Models
 		models,
 		selectedModel,
+		selectedModelInfo,
 		setSelectedModel,
 
-		// Labels
-		selectedModelLabels,
-		hiddenLabels,
-		setHiddenLabels,
+		// Classes
+		selectedModelClasses,
+		hiddenClasses,
+		setHiddenClasses,
 
 		// Predictions
 		predictions,
 		loadingPredictions,
 
 		processedPredictions,
-		processedVolumePredictions,
-		processedSlicePredictions,
+		processedVolumePrediction,
+		processedSlicePrediction,
 
 		// Prediction UI + commands
 		showPredictions: nav.showPredictions,
@@ -251,13 +279,15 @@ export function useViewerState(): ViewerState {
 		// Settings
 		showDates,
 		setShowDates,
+
 		showFilenames,
 		setShowFilenames,
+
 		showScores,
 		setShowScores,
 
-		postParameters,
-		setPostParameters,
+		selectedPostprocConfig,
+		setSelectedPostprocConfig,
 
 		modelColors,
 		setModelColors,

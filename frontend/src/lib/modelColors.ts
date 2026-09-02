@@ -1,16 +1,16 @@
-export const DEFAULT_LABEL_COLOR: string = "#000000";
+export const DEFAULT_CLASS_COLOR: string = "#000000";
 
 export class ModelColors {
-	private labels: string[];
+	private classes: string[];
 	private colors: string[];
 
-	constructor(labels: string[], colors?: string[]) {
-		this.labels = labels;
+	constructor(classes: string[], colors?: string[]) {
+		this.classes = classes;
 
-		if (colors && colors.length === labels.length) {
+		if (colors && colors.length === classes.length) {
 			this.colors = colors;
 		} else {
-			this.colors = labels.map(() => this.getRandomColor());
+			this.colors = classes.map(() => this.getRandomColor());
 		}
 	}
 
@@ -21,14 +21,14 @@ export class ModelColors {
 	}
 
 	getColorByIndex(index: number): string {
-		return this.colors[index] ?? DEFAULT_LABEL_COLOR;
+		return this.colors[index] ?? DEFAULT_CLASS_COLOR;
 	}
 
-	getColorByLabel(label: string): string {
-		const index = this.labels.indexOf(label);
+	getColorByClass(className: string): string {
+		const index = this.classes.indexOf(className);
 
 		if (index === -1) {
-			return DEFAULT_LABEL_COLOR;
+			return DEFAULT_CLASS_COLOR;
 		}
 
 		return this.colors[index];
@@ -40,8 +40,8 @@ export class ModelColors {
 		}
 	}
 
-	setColorByLabel(label: string, color: string = this.getRandomColor()): void {
-		const index = this.labels.indexOf(label);
+	setColorByClass(className: string, color: string = this.getRandomColor()): void {
+		const index = this.classes.indexOf(className);
 
 		if (index !== -1) {
 			this.colors[index] = color;
@@ -50,12 +50,12 @@ export class ModelColors {
 
 	toJSON() {
 		return {
-			labels: this.labels,
+			classes: this.classes,
 			colors: this.colors,
 		};
 	}
 
-	static fromJSON(obj: { labels: string[]; colors: string[] }): ModelColors {
-		return new ModelColors(obj.labels, obj.colors);
+	static fromJSON(obj: { classes: string[]; colors: string[] }): ModelColors {
+		return new ModelColors(obj.classes, obj.colors);
 	}
 }

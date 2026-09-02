@@ -1,5 +1,4 @@
-import type { SlicePredictions, VolumePredictions } from "@/api/prediction";
-import { streamPredictions } from "@/api/prediction";
+import { streamPredictions, type SlicePrediction, type VolumePrediction } from "@/api/prediction";
 import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
 import { showError, showInfo, showSuccess } from "@/lib/toast";
 import { useCallback, useRef } from "react";
@@ -8,8 +7,8 @@ import type { DicomPair } from "./viewerTypes";
 type UsePredictionsControllerOptions = {
 	currentPairs: DicomPair[];
 	selectedModel?: string;
-	predictions: Map<string, Map<string, VolumePredictions>>;
-	setPredictions: React.Dispatch<React.SetStateAction<Map<string, Map<string, VolumePredictions>>>>;
+	predictions: Map<string, Map<string, VolumePrediction>>;
+	setPredictions: React.Dispatch<React.SetStateAction<Map<string, Map<string, VolumePrediction>>>>;
 	loadingPredictions: Map<string, Set<string>>;
 	setLoadingPredictions: React.Dispatch<React.SetStateAction<Map<string, Set<string>>>>;
 };
@@ -41,14 +40,7 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 	);
 
 	const makeRequestKey = (model: string, uid: string) => `${model}::${uid}`;
-
-	const emptySlice = (): SlicePredictions => ({
-		boxes: [],
-		scores: [],
-		classes: [],
-	});
-
-	const createEmptyVolume = (total: number): VolumePredictions => Array.from({ length: total }, emptySlice);
+	const createEmptyVolume = (total: number): VolumePrediction => Array.from({ length: total }, () => null);
 
 	const tryFetchPredictions = useCallback(
 		async (index: number) => {
@@ -95,9 +87,9 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 			});
 
 			let completed = false;
-			let totalSlices: number = 0;
+			let totalSlices = 0;
 
-			const setSlice = (i: number, pred: SlicePredictions) => {
+			const setSlice = (i: number, pred: SlicePrediction) => {
 				setPredictions((prev) => {
 					const next = new Map(prev);
 					const perModel = new Map(next.get(selectedModel) ?? []);
@@ -206,9 +198,7 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 	);
 
 	const predictCurrent = useCallback(
-		async (selectedPair: number) => {
-			return await tryFetchPredictions(selectedPair);
-		},
+		async (selectedPair: number) => await tryFetchPredictions(selectedPair),
 		[tryFetchPredictions],
 	);
 

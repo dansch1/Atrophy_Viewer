@@ -1,96 +1,116 @@
-import type { Box, SlicePredictions, VolumePredictions } from "@/api/prediction";
+import type { ModelInfo } from "@/api/model";
+import type { Box, DetectionPrediction, SlicePrediction, VolumePrediction } from "@/api/prediction";
 
-export function area(b: Box): number {
-	const [x1, y1, x2, y2] = b;
-	return Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-}
-
-export function iou(a: Box, b: Box): number {
-	const [ax1, ay1, ax2, ay2] = a;
-	const [bx1, by1, bx2, by2] = b;
-
-	const ix1 = Math.max(ax1, bx1);
-	const iy1 = Math.max(ay1, by1);
-	const ix2 = Math.min(ax2, bx2);
-	const iy2 = Math.min(ay2, by2);
-
-	const inter = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
-	if (inter <= 0) {
-		return 0;
-	}
-
-	const union = area(a) + area(b) - inter;
-	return union <= 0 ? 0 : inter / union;
-}
-
-export type PostprocessParams = {
+type DetectionPostprocConfig = {
+	type: "detection";
 	scoreThreshold: number;
 	nmsIouThreshold: number;
-	topK: number; // 0 = off
+	topK: number;
 };
 
-export function postprocessSlice(slice: SlicePredictions, p: PostprocessParams): SlicePredictions {
-	const n = Math.min(slice.boxes.length, slice.scores.length, slice.classes.length);
+type ClassPostprocConfig = {
+	type: "class";
+	thresholds: number[];
+};
 
-	// Score filter
-	const idx: number[] = [];
-	for (let i = 0; i < n; i++) {
-		if (slice.scores[i] >= p.scoreThreshold) idx.push(i);
+export type PostprocConfig = DetectionPostprocConfig | ClassPostprocConfig;
+
+export function createPostprocConfig(model: ModelInfo): PostprocConfig | undefined {
+	if (!model.postproc_config) {
+		return undefined;
 	}
 
-	if (idx.length === 0) {
-		return {
-			boxes: [],
-			scores: [],
-			classes: [],
-			masks: slice.masks ? [] : undefined,
-			contours: slice.contours ? [] : undefined,
-		};
+	switch (model.postproc_config.type) {
+		case "detection":
+			return {
+				type: "detection",
+				scoreThreshold: model.postproc_config.score_threshold,
+				nmsIouThreshold: model.postproc_config.nms_iou_threshold,
+				topK: model.postproc_config.top_k,
+			};
+
+		case "class":
+			return {
+				type: "class",
+				thresholds: [...model.postproc_config.thresholds],
+			};
+	}
+}
+
+export function postprocessVolume(volume: VolumePrediction, config: PostprocConfig): VolumePrediction {
+	return volume.map((prediction) => postprocessPrediction(prediction, config));
+}
+
+function postprocessPrediction(prediction: SlicePrediction | null, config: PostprocConfig): SlicePrediction | null {
+	if (!prediction) {
+		return null;
 	}
 
-	idx.sort((a, b) => slice.scores[b] - slice.scores[a]);
+	if (prediction.kind === "class") {
+		return prediction;
+	}
 
-	// Batched NMS
-	const kept: number[] = [];
-	const keptByClass = new Map<number, number[]>();
+	if (config.type !== "detection") {
+		return prediction;
+	}
 
-	for (const i of idx) {
-		const cls = slice.classes[i];
-		const box = slice.boxes[i];
+	return postprocessDetection(prediction, config);
+}
 
-		const keptInCls = keptByClass.get(cls) ?? [];
-		let suppressed = false;
+function postprocessDetection(prediction: DetectionPrediction, config: DetectionPostprocConfig): DetectionPrediction {
+	const candidates = prediction.scores
+		.map((score, index) => ({ score, index }))
+		.filter(({ score }) => score >= config.scoreThreshold)
+		.sort((a, b) => b.score - a.score)
+		.map(({ index }) => index);
 
-		for (const j of keptInCls) {
-			if (iou(box, slice.boxes[j]) > p.nmsIouThreshold) {
-				suppressed = true;
-				break;
+	const keep: number[] = [];
+	let remaining = candidates;
+
+	while (remaining.length > 0) {
+		const current = remaining[0];
+		keep.push(current);
+
+		remaining = remaining.slice(1).filter((index) => {
+			if (prediction.classes[index] !== prediction.classes[current]) {
+				return true;
 			}
-		}
 
-		if (suppressed) {
-			continue;
-		}
-
-		kept.push(i);
-		keptInCls.push(i);
-		keptByClass.set(cls, keptInCls);
-
-		// topK
-		if (p.topK > 0 && kept.length >= p.topK) {
-			break;
-		}
+			return intersectionOverUnion(prediction.boxes[current], prediction.boxes[index]) <= config.nmsIouThreshold;
+		});
 	}
+
+	const selected = config.topK > 0 ? keep.slice(0, config.topK) : keep;
 
 	return {
-		boxes: kept.map((i) => slice.boxes[i]),
-		scores: kept.map((i) => slice.scores[i]),
-		classes: kept.map((i) => slice.classes[i]),
-		masks: slice.masks ? kept.map((i) => slice.masks![i]) : undefined,
-		contours: slice.contours ? kept.map((i) => slice.contours![i]) : undefined,
+		kind: "detection",
+		boxes: selected.map((i) => prediction.boxes[i]),
+		scores: selected.map((i) => prediction.scores[i]),
+		classes: selected.map((i) => prediction.classes[i]),
 	};
 }
 
-export function postprocessVolume(volume: SlicePredictions[], p: PostprocessParams): VolumePredictions {
-	return volume.map((s) => postprocessSlice(s, p));
+function intersectionOverUnion(a: Box, b: Box): number {
+	const left = Math.max(a[0], b[0]);
+	const top = Math.max(a[1], b[1]);
+	const right = Math.min(a[2], b[2]);
+	const bottom = Math.min(a[3], b[3]);
+
+	const intersectionWidth = Math.max(0, right - left);
+	const intersectionHeight = Math.max(0, bottom - top);
+	const intersection = intersectionWidth * intersectionHeight;
+
+	const union = area(a) + area(b) - intersection;
+
+	return union > 0 ? intersection / union : 0;
+}
+
+export function area(box: Box): number {
+	const [x1, y1, x2, y2] = box;
+	return Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+}
+
+export function isClassPositive(score: number, classIndex: number, config?: PostprocConfig): boolean {
+	const threshold = (config?.type === "class" ? config.thresholds[classIndex] : undefined) ?? 0.5;
+	return score >= threshold;
 }

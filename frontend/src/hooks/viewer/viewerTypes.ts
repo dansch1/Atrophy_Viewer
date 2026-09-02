@@ -1,7 +1,8 @@
-import type { SlicePredictions, VolumePredictions } from "@/api/prediction";
+import type { ModelInfo, ModelMap } from "@/api/model";
+import type { SlicePrediction, VolumePrediction } from "@/api/prediction";
 import type { FundusData, VolumeData } from "@/lib/dicom";
 import type { ModelColors } from "@/lib/modelColors";
-import type { PostprocessParams } from "@/lib/postprocess";
+import type { PostprocConfig } from "@/lib/postprocess";
 import type { Dispatch, SetStateAction } from "react";
 
 export type DicomPair = { volume: VolumeData; fundus?: FundusData };
@@ -44,23 +45,24 @@ export type ViewerState = {
 	setShowSlices: (value: boolean) => void;
 
 	// Models
-	models: Map<string, string[]>;
+	models: ModelMap;
 	selectedModel?: string;
+	selectedModelInfo?: ModelInfo;
 	setSelectedModel: (model: string) => void;
 
-	// Labels
-	selectedModelLabels?: string[];
-	hiddenLabels: Set<number>;
-	setHiddenLabels: (fn: (prev: Set<number>) => Set<number>) => void;
+	// Classes
+	selectedModelClasses?: string[];
+	hiddenClasses: Set<number>;
+	setHiddenClasses: Dispatch<SetStateAction<Set<number>>>;
 
 	// Predictions (raw)
-	predictions: Map<string, Map<string, VolumePredictions>>;
+	predictions: Map<string, Map<string, VolumePrediction>>;
 	loadingPredictions: Map<string, Set<string>>;
 
 	// Predictions (processed)
-	processedPredictions: Map<string, Map<string, VolumePredictions>>;
-	processedVolumePredictions?: VolumePredictions;
-	processedSlicePredictions?: SlicePredictions;
+	processedPredictions: Map<string, Map<string, VolumePrediction>>;
+	processedVolumePrediction?: VolumePrediction;
+	processedSlicePrediction?: SlicePrediction;
 
 	// Prediction controller
 	showPredictions: boolean;
@@ -75,13 +77,15 @@ export type ViewerState = {
 	// Settings
 	showDates: boolean;
 	setShowDates: (value: boolean) => void;
+
 	showFilenames: boolean;
 	setShowFilenames: (value: boolean) => void;
+
 	showScores: boolean;
 	setShowScores: (value: boolean) => void;
 
-	postParameters: PostprocessParams;
-	setPostParameters: Dispatch<SetStateAction<PostprocessParams>>;
+	selectedPostprocConfig?: PostprocConfig;
+	setSelectedPostprocConfig: (update: SetStateAction<PostprocConfig>) => void;
 
 	modelColors: Record<string, ModelColors>;
 	setModelColors: Dispatch<SetStateAction<Record<string, ModelColors>>>;

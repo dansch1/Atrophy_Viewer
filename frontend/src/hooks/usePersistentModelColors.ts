@@ -8,10 +8,10 @@ export function usePersistentModelColors(key: string) {
 		{
 			serialize: (state) =>
 				JSON.stringify(
-					Object.fromEntries(Object.entries(state).map(([modelName, map]) => [modelName, map.toJSON()])),
+					Object.fromEntries(Object.entries(state).map(([modelId, colors]) => [modelId, colors.toJSON()])),
 				),
 			deserialize: (stored) => {
-				const parsed = JSON.parse(stored) as Record<string, { labels: string[]; colors: string[] }>;
+				const parsed = JSON.parse(stored) as Record<string, { classes: string[]; colors: string[] }>;
 				const result: Record<string, ModelColors> = {};
 
 				for (const [modelName, obj] of Object.entries(parsed)) {

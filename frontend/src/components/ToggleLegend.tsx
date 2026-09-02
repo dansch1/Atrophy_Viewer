@@ -3,21 +3,19 @@ import { useViewer } from "@/context/ViewerStateProvider";
 import { cn } from "@/lib/utils";
 import React from "react";
 
-type ToggleLegendProps = {
+export const ToggleLegend: React.FC<{
 	variant?: "inline" | "overlay";
 	className?: string;
 	title?: string;
-};
+}> = ({ variant = "inline", className, title = "Legend" }) => {
+	const { selectedModelClasses, hiddenClasses, setHiddenClasses, selectedModelColors } = useViewer();
 
-export const ToggleLegend: React.FC<ToggleLegendProps> = ({ variant = "inline", className, title = "Legend" }) => {
-	const { selectedModelLabels, hiddenLabels, setHiddenLabels, selectedModelColors } = useViewer();
-
-	if (!selectedModelLabels) {
+	if (!selectedModelClasses) {
 		return null;
 	}
 
-	const toggleLabel = (cls: number) => {
-		setHiddenLabels((prev) => {
+	const toggleClass = (cls: number) => {
+		setHiddenClasses((prev) => {
 			const next = new Set(prev);
 			next.has(cls) ? next.delete(cls) : next.add(cls);
 			return next;
@@ -32,25 +30,25 @@ export const ToggleLegend: React.FC<ToggleLegendProps> = ({ variant = "inline", 
 	const buttonClass =
 		variant === "overlay" ? "flex items-center justify-start gap-2 transition" : "gap-1 px-2 py-1 text-xs";
 
-	const swatchClass = variant === "overlay" ? "w-4 h-4 rounded border" : "h-3 w-3 rounded-sm";
+	const swatchClass = variant === "overlay" ? "w-4 h-4 rounded border" : "w-3 h-3 rounded-sm";
 
 	return (
 		<div className={cn(containerClass, className)}>
 			{variant === "overlay" && <div className="font-semibold mb-1">{title}</div>}
 
-			{selectedModelLabels.map((label, cls) => (
+			{selectedModelClasses.map((className, cls) => (
 				<Button
 					key={cls}
 					variant="outline"
 					size="sm"
-					onClick={() => toggleLabel(cls)}
-					className={cn(buttonClass, hiddenLabels.has(cls) && "opacity-40")}
+					onClick={() => toggleClass(cls)}
+					className={cn(buttonClass, hiddenClasses.has(cls) && "opacity-40")}
 				>
 					<span
 						className={swatchClass}
-						style={{ backgroundColor: selectedModelColors.getColorByLabel(label) }}
+						style={{ backgroundColor: selectedModelColors.getColorByClass(className) }}
 					/>
-					<span className={variant === "overlay" ? "text-muted-foreground" : ""}>{label}</span>
+					<span className={variant === "overlay" ? "text-muted-foreground" : ""}>{className}</span>
 				</Button>
 			))}
 		</div>
