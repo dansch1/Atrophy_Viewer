@@ -7,7 +7,7 @@ import { HelpDialog } from "./dialogs/HelpDialog";
 import { SettingsDialog } from "./dialogs/SettingsDialog";
 
 const Header = () => {
-	const { loadDicomPairs } = useViewer();
+	const { loadImages } = useViewer();
 
 	const [isDragOver, setIsDragOver] = useState(false);
 	const [, setShowExport] = useState(false);
@@ -41,7 +41,7 @@ const Header = () => {
 	};
 
 	const onFileUpload = async (files: FileList) => {
-		loadDicomPairs(files);
+		loadImages(files);
 	};
 
 	return (
@@ -69,12 +69,12 @@ const Header = () => {
 						id="file-upload"
 						ref={fileInputRef}
 						type="file"
-						accept=".dcm"
+						accept=".dcm,.png,.jpg,.jpeg,.webp,.bmp,.tif"
 						onChange={handleFileChange}
 						multiple
 						className="hidden"
 					/>
-					<p className="text-xs text-muted-foreground">Drag & drop or click to upload (.dcm)</p>
+					<p className="text-xs text-muted-foreground">Drag & drop or click to upload DICOM or image files</p>
 				</div>
 			</div>
 

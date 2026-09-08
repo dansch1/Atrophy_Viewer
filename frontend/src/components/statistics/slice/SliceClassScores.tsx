@@ -4,19 +4,29 @@ import { useViewer } from "@/context/ViewerStateProvider";
 import { useMemo } from "react";
 import { Line, LineChart, XAxis, YAxis } from "recharts";
 
-const ClassScores: React.FC = () => {
-	const { processedVolumePrediction, selectedModelClasses, hiddenClasses, selectedModelColors, setSelectedSlice } =
-		useViewer();
+const SliceClassScores: React.FC = () => {
+	const {
+		selectedVolume,
+		setSelectedSlice,
+		selectedModelClasses,
+		hiddenClasses,
+		processedVolumePrediction,
+		selectedModelColors,
+	} = useViewer();
 
 	const data = useMemo(() => {
-		if (!processedVolumePrediction || !selectedModelClasses) {
+		if (!selectedVolume || !selectedModelClasses) {
 			return null;
 		}
 
-		return processedVolumePrediction.map((prediction, sliceIndex) => {
+		if (!processedVolumePrediction || processedVolumePrediction.scope !== "slice") {
+			return Array.from({ length: selectedVolume.frames }, (_, sliceIndex) => ({ slice: sliceIndex + 1 }));
+		}
+
+		return processedVolumePrediction.items.map((prediction, sliceIndex) => {
 			const row: Record<string, number> = { slice: sliceIndex + 1 };
 
-			if (prediction?.kind !== "class") {
+			if (prediction?.kind !== "classification") {
 				return row;
 			}
 
@@ -26,7 +36,7 @@ const ClassScores: React.FC = () => {
 
 			return row;
 		});
-	}, [processedVolumePrediction, selectedModelClasses]);
+	}, [selectedVolume, selectedModelClasses, processedVolumePrediction]);
 
 	if (!data || !selectedModelClasses) {
 		return null;
@@ -84,4 +94,4 @@ const ClassScores: React.FC = () => {
 	);
 };
 
-export default ClassScores;
+export default SliceClassScores;

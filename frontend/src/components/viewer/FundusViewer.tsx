@@ -1,13 +1,14 @@
 import { useViewer } from "@/context/ViewerStateProvider";
-import { renderDicom } from "@/lib/dicom";
+import { renderImage } from "@/lib/images";
 import React, { useEffect, useRef } from "react";
-import ClassFundusOverlay from "./overlays/ClassFundusOverlay";
-import DetectionFundusOverlay from "./overlays/DetectionFundusOverlay";
+import ClassVolumeFundusOverlay from "./overlays/ClassFundusProjection";
+import DetectionVolumeFundusOverlay from "./overlays/DetectionFundusProjection";
 
 const FundusViewer: React.FC = () => {
 	const {
-		selectedVolume,
 		selectedFundus,
+		selectedVolume,
+		selectedOct,
 		selectedSlice,
 		setSelectedSlice,
 		viewMode,
@@ -23,26 +24,24 @@ const FundusViewer: React.FC = () => {
 
 	useEffect(() => {
 		if (selectedFundus && imgCanvasRef.current) {
-			renderDicom(selectedFundus.image, imgCanvasRef.current);
+			renderImage(selectedFundus.image, imgCanvasRef.current);
 		}
 	}, [selectedFundus, viewMode]);
 
-	if (!selectedFundus || viewMode === "slice") {
+	if (!selectedFundus || (selectedOct && viewMode === "oct")) {
 		return null;
 	}
 
-	const renderPrediction = () => {
+	const renderVolumePrediction = () => {
 		if (!showPredictions || !processedVolumePrediction || !selectedModelInfo) {
 			return null;
 		}
 
 		switch (selectedModelInfo.task) {
 			case "object_detection":
-				return <DetectionFundusOverlay />;
+				return <DetectionVolumeFundusOverlay />;
 			case "classification":
-				return <ClassFundusOverlay />;
-			default:
-				return null;
+				return <ClassVolumeFundusOverlay />;
 		}
 	};
 
@@ -51,7 +50,7 @@ const FundusViewer: React.FC = () => {
 			<div className="relative">
 				<canvas ref={imgCanvasRef} />
 
-				{renderPrediction()}
+				{renderVolumePrediction()}
 
 				{selectedVolume && showSlices && (
 					<svg className="absolute top-0 left-0 w-full h-full">

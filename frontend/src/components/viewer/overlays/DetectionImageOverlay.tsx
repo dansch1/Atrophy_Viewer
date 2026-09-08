@@ -1,14 +1,9 @@
 import type { DetectionPrediction } from "@/api/prediction";
 import { useViewer } from "@/context/ViewerStateProvider";
-import { clamp } from "@/lib/utils";
 import React from "react";
 
-const DetectionSliceOverlay: React.FC<{ prediction: DetectionPrediction }> = ({ prediction }) => {
-	const { selectedVolume, hiddenClasses, showScores, selectedModelColors } = useViewer();
-
-	if (!selectedVolume) {
-		return null;
-	}
+const DetectionImageOverlay: React.FC<{ prediction: DetectionPrediction }> = ({ prediction }) => {
+	const { hiddenClasses, showScores, selectedModelColors } = useViewer();
 
 	return (
 		<svg className="absolute top-0 left-0 w-full h-full">
@@ -20,10 +15,10 @@ const DetectionSliceOverlay: React.FC<{ prediction: DetectionPrediction }> = ({ 
 
 				const [x1, y1, x2, y2] = box;
 
-				const x = clamp(Math.min(x1, x2), 0, selectedVolume.cols);
-				const y = clamp(Math.min(y1, y2), 0, selectedVolume.rows);
-				const width = Math.max(0, clamp(Math.max(x1, x2), 0, selectedVolume.cols) - x);
-				const height = Math.max(0, clamp(Math.max(y1, y2), 0, selectedVolume.rows) - y);
+				const x = Math.min(x1, x2);
+				const y = Math.min(y1, y2);
+				const width = Math.abs(x2 - x1);
+				const height = Math.abs(y2 - y1);
 
 				if (width === 0 || height === 0) {
 					return null;
@@ -44,7 +39,6 @@ const DetectionSliceOverlay: React.FC<{ prediction: DetectionPrediction }> = ({ 
 							stroke={color}
 							strokeWidth={0.8}
 							vectorEffect="non-scaling-stroke"
-							onClick={() => console.log("Clicked")}
 						/>
 
 						{showScores && (
@@ -67,4 +61,4 @@ const DetectionSliceOverlay: React.FC<{ prediction: DetectionPrediction }> = ({ 
 	);
 };
 
-export default DetectionSliceOverlay;
+export default DetectionImageOverlay;

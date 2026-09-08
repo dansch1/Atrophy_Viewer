@@ -1,107 +1,94 @@
-import { streamPredictions, type SlicePrediction, type VolumePrediction } from "@/api/prediction";
+import type { ModelInfo } from "@/api/model";
+import { streamPredictions, type Prediction, type PredictionResult } from "@/api/prediction";
 import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
+import type { FileData } from "@/lib/images";
+import { isModelCompatible } from "@/lib/modelCompatibility";
 import { showError, showInfo, showSuccess } from "@/lib/toast";
 import { useCallback, useRef } from "react";
-import type { DicomPair } from "./viewerTypes";
+import type { PredictionMap } from "./viewerTypes";
 
 type UsePredictionsControllerOptions = {
-	currentPairs: DicomPair[];
 	selectedModel?: string;
-	predictions: Map<string, Map<string, VolumePrediction>>;
-	setPredictions: React.Dispatch<React.SetStateAction<Map<string, Map<string, VolumePrediction>>>>;
+	selectedModelInfo?: ModelInfo;
+	predictions: PredictionMap;
+	setPredictions: React.Dispatch<React.SetStateAction<PredictionMap>>;
 	loadingPredictions: Map<string, Set<string>>;
 	setLoadingPredictions: React.Dispatch<React.SetStateAction<Map<string, Set<string>>>>;
 };
 
 export function usePredictionsController(options: UsePredictionsControllerOptions) {
 	const { start, update, stop } = useGlobalLoader();
-
-	const { currentPairs, selectedModel, predictions, setPredictions, loadingPredictions, setLoadingPredictions } =
+	const { selectedModel, selectedModelInfo, predictions, setPredictions, loadingPredictions, setLoadingPredictions } =
 		options;
 
-	const abortControllers = useRef<AbortController[]>([]);
-	const loaderTokensRef = useRef<Map<string, string>>(new Map());
+	const abortControllers = useRef<Set<AbortController>>(new Set());
+	const loaderTokens = useRef<Map<string, string>>(new Map());
+	const activeRequests = useRef<Set<string>>(new Set());
 
 	const cancelAllPredictionRequests = useCallback(() => {
 		abortControllers.current.forEach((c) => c.abort());
-		abortControllers.current = [];
-		loaderTokensRef.current.forEach((t) => stop(t));
-		loaderTokensRef.current.clear();
+		abortControllers.current.clear();
+		loaderTokens.current.forEach((t) => stop(t));
+		loaderTokens.current.clear();
+		activeRequests.current.clear();
 	}, [stop]);
 
-	const isLoading = useCallback(
-		(model: string, sopInstanceUID: string) => loadingPredictions.get(model)?.has(sopInstanceUID) ?? false,
-		[loadingPredictions],
-	);
-
-	const hasPrediction = useCallback(
-		(model: string, sopInstanceUID: string) => predictions.get(model)?.has(sopInstanceUID) ?? false,
-		[predictions],
-	);
-
-	const makeRequestKey = (model: string, uid: string) => `${model}::${uid}`;
-	const createEmptyVolume = (total: number): VolumePrediction => Array.from({ length: total }, () => null);
-
 	const tryFetchPredictions = useCallback(
-		async (index: number) => {
-			if (!selectedModel) {
+		async (image: FileData): Promise<boolean> => {
+			if (!selectedModel || !selectedModelInfo) {
 				showError("No model selected", "Please select a model before loading predictions.");
 				return false;
 			}
 
-			const volume = currentPairs[index]?.volume;
-			if (!volume) {
-				showError(
-					"No volume file selected",
-					"Please select a valid DICOM volume file before loading predictions.",
-				);
+			if (!isModelCompatible(selectedModelInfo, image)) {
+				showError("Incompatible image", "This model cannot predict the selected image type.");
 				return false;
 			}
 
-			const uid = volume.sopInstanceUID;
-			const file = volume.file;
+			const imageId = image.id;
+			const file = image.file;
 
-			if (hasPrediction(selectedModel, uid)) {
+			if (predictions.get(selectedModel)?.has(imageId)) {
 				return true;
 			}
-			if (isLoading(selectedModel, uid)) {
+
+			const requestKey = `${selectedModel}::${imageId}`;
+			if (loadingPredictions.get(selectedModel)?.has(imageId) || activeRequests.current.has(requestKey)) {
 				return false;
 			}
+			activeRequests.current.add(requestKey);
 
 			const controller = new AbortController();
-			abortControllers.current.push(controller);
+			abortControllers.current.add(controller);
 
-			const requestKey = makeRequestKey(selectedModel, uid);
-			if (!loaderTokensRef.current.has(requestKey)) {
-				const t = start(`Predicting: ${file.name}`, () => controller.abort());
-				loaderTokensRef.current.set(requestKey, t);
-			}
-			const loaderToken = loaderTokensRef.current.get(requestKey)!;
+			const loaderToken = start(`Predicting: ${file.name}`, () => controller.abort());
+			loaderTokens.current.set(requestKey, loaderToken);
 
 			setLoadingPredictions((prev) => {
 				const next = new Map(prev);
-				const set = new Set(next.get(selectedModel) ?? []);
-				set.add(uid);
-				next.set(selectedModel, set);
+				const images = new Set(next.get(selectedModel) ?? []);
+				images.add(imageId);
+				next.set(selectedModel, images);
 				return next;
 			});
 
 			let completed = false;
-			let totalSlices = 0;
+			let total = 1;
 
-			const setSlice = (i: number, pred: SlicePrediction) => {
+			const setPrediction = (i: number, pred: Prediction) => {
 				setPredictions((prev) => {
 					const next = new Map(prev);
 					const perModel = new Map(next.get(selectedModel) ?? []);
-					const existing = perModel.get(uid);
+					const existing = perModel.get(imageId);
+
 					if (!existing) {
 						return prev;
 					}
 
-					const volumePreds = existing.slice();
-					volumePreds[i] = pred;
+					const items = existing.items.slice();
+					items[i] = pred;
 
-					perModel.set(uid, volumePreds);
+					perModel.set(imageId, { ...existing, items });
 					next.set(selectedModel, perModel);
 					return next;
 				});
@@ -110,21 +97,26 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 			try {
 				await streamPredictions(file, selectedModel, {
 					controller,
-					onMeta: ({ slices }) => {
-						totalSlices = slices;
+					onMeta: (meta) => {
+						total = meta.count;
 						update(loaderToken, `Loading model: ${selectedModel}`);
+
+						const initial: PredictionResult = {
+							scope: meta.scope,
+							items: Array.from({ length: meta.count }, () => null),
+						};
 
 						setPredictions((prev) => {
 							const next = new Map(prev);
 							const perModel = new Map(next.get(selectedModel) ?? []);
-							perModel.set(uid, createEmptyVolume(totalSlices));
+							perModel.set(imageId, initial);
 							next.set(selectedModel, perModel);
 							return next;
 						});
 					},
-					onSlice: (i, pred) => {
-						setSlice(i, pred);
-						update(loaderToken, `Predicting: ${file.name} (${i + 1}/${totalSlices})`);
+					onPred: (i, pred) => {
+						setPrediction(i, pred);
+						update(loaderToken, `Predicting: ${file.name} (${i + 1}/${total})`);
 					},
 					onDone: () => {
 						completed = true;
@@ -134,12 +126,12 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 
 				showSuccess("Prediction complete", `Predictions loaded for file: ${file.name}`);
 				return true;
-			} catch (err: any) {
-				if (err?.name === "AbortError") {
+			} catch (err) {
+				if (err instanceof Error && err.name === "AbortError") {
 					showInfo("Request cancelled", `The prediction request for ${file.name} was cancelled.`);
 				} else {
-					console.error("Prediction request failed", { file, err });
-					showError("Prediction error", "Failed to predict the volume file. Please try again.");
+					console.error("Prediction request failed", { image, err });
+					showError("Prediction error", "Failed to predict the image. Please try again.");
 				}
 
 				return false;
@@ -150,7 +142,7 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 						const next = new Map(prev);
 						const perModel = new Map(next.get(selectedModel) ?? []);
 
-						perModel.delete(uid);
+						perModel.delete(imageId);
 						if (perModel.size === 0) {
 							next.delete(selectedModel);
 						} else {
@@ -163,60 +155,55 @@ export function usePredictionsController(options: UsePredictionsControllerOption
 
 				setLoadingPredictions((prev) => {
 					const next = new Map(prev);
-					const set = new Set(next.get(selectedModel) ?? []);
+					const images = new Set(next.get(selectedModel) ?? []);
 
-					set.delete(uid);
-					if (set.size === 0) {
+					images.delete(imageId);
+					if (images.size === 0) {
 						next.delete(selectedModel);
 					} else {
-						next.set(selectedModel, set);
+						next.set(selectedModel, images);
 					}
 
 					return next;
 				});
 
-				const t = loaderTokensRef.current.get(requestKey);
+				const t = loaderTokens.current.get(requestKey);
 				if (t) {
 					stop(t);
-					loaderTokensRef.current.delete(requestKey);
+					loaderTokens.current.delete(requestKey);
 				}
 
-				abortControllers.current = abortControllers.current.filter((c) => c !== controller);
+				activeRequests.current.delete(requestKey);
+				abortControllers.current.delete(controller);
 			}
 		},
 		[
 			selectedModel,
-			currentPairs,
-			setLoadingPredictions,
+			selectedModelInfo,
+			predictions,
+			loadingPredictions,
 			setPredictions,
-			hasPrediction,
-			isLoading,
+			setLoadingPredictions,
 			start,
 			update,
 			stop,
 		],
 	);
 
-	const predictCurrent = useCallback(
-		async (selectedPair: number) => await tryFetchPredictions(selectedPair),
-		[tryFetchPredictions],
+	const predictImages = useCallback(
+		async (images: FileData[]): Promise<boolean[]> => {
+			if (!selectedModel || !selectedModelInfo) {
+				showError("No model selected", "Please select a model before loading predictions.");
+				return [];
+			}
+
+			return await Promise.all(images.map((image) => tryFetchPredictions(image)));
+		},
+		[selectedModel, selectedModelInfo, tryFetchPredictions],
 	);
-
-	const predictAll = useCallback(async () => {
-		if (!selectedModel) {
-			showError("No model selected", "Please select a model before predicting all.");
-			return [];
-		}
-
-		return await Promise.all(currentPairs.map((_, i) => tryFetchPredictions(i)));
-	}, [currentPairs, selectedModel, tryFetchPredictions]);
 
 	return {
 		cancelAllPredictionRequests,
-		isLoading,
-		hasPrediction,
-		tryFetchPredictions,
-		predictCurrent,
-		predictAll,
+		predictImages,
 	};
 }

@@ -2,21 +2,33 @@ import { z } from "zod";
 import { fetchWithTimeout } from "./http";
 
 export const ModelTaskSchema = z.enum(["object_detection", "classification"]);
+export const ImageTypeSchema = z.enum(["fundus", "oct_bscan", "oct_volume"]);
+export const PredictionScopeSchema = z.enum(["image", "slice", "volume"]);
 
-const ModelCapabilitiesSchema = z.object({
-	boxes: z.boolean(),
-	scores: z.boolean(),
-});
+const ModelInputSchema = z.discriminatedUnion("image_type", [
+	z.object({
+		image_type: z.literal("fundus"),
+		prediction_scope: z.literal("image"),
+	}),
+	z.object({
+		image_type: z.literal("oct_bscan"),
+		prediction_scope: z.literal("image"),
+	}),
+	z.object({
+		image_type: z.literal("oct_volume"),
+		prediction_scope: z.enum(["slice", "volume"]),
+	}),
+]);
 
 const DetectionPostprocConfigSchema = z.object({
-	type: z.literal("detection"),
+	type: z.literal("object_detection"),
 	score_threshold: z.number(),
 	nms_iou_threshold: z.number(),
 	top_k: z.number().int().nonnegative(),
 });
 
 const ClassPostprocConfigSchema = z.object({
-	type: z.literal("class"),
+	type: z.literal("classification"),
 	thresholds: z.array(z.number()),
 });
 
@@ -27,7 +39,7 @@ const ModelInfoSchema = z.object({
 	name: z.string(),
 	task: ModelTaskSchema,
 	classes: z.array(z.string()),
-	capabilities: ModelCapabilitiesSchema,
+	input: ModelInputSchema,
 	postproc_config: PostprocConfigSchema.optional(),
 });
 
@@ -36,6 +48,10 @@ const ModelMapSchema = z
 	.transform((data) => new Map(Object.entries(data.models)));
 
 export type ModelTask = z.infer<typeof ModelTaskSchema>;
+export type ImageType = z.infer<typeof ImageTypeSchema>;
+export type PredictionScope = z.infer<typeof PredictionScopeSchema>;
+
+export type ModelInput = z.infer<typeof ModelInputSchema>;
 export type ModelInfo = z.infer<typeof ModelInfoSchema>;
 export type ModelMap = z.infer<typeof ModelMapSchema>;
 

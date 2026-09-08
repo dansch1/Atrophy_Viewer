@@ -4,10 +4,10 @@ import { withAlpha } from "@/lib/utils";
 import { dot, lerp, mid, type Pt, unitNormal } from "@/lib/vec2";
 import React from "react";
 
-const DetectionFundusOverlay: React.FC = () => {
-	const { selectedVolume, processedVolumePrediction, hiddenClasses, showScores, selectedModelColors } = useViewer();
+const DetectionVolumeFundusOverlay: React.FC = () => {
+	const { selectedVolume, hiddenClasses, processedVolumePrediction, showScores, selectedModelColors } = useViewer();
 
-	if (!selectedVolume || !processedVolumePrediction) {
+	if (!selectedVolume || !processedVolumePrediction || processedVolumePrediction.scope !== "slice") {
 		return null;
 	}
 
@@ -55,8 +55,13 @@ const DetectionFundusOverlay: React.FC = () => {
 	return (
 		<svg className="absolute top-0 left-0 w-full h-full">
 			<g>
-				{processedVolumePrediction.flatMap((prediction, sliceIndex) => {
-					if (prediction?.kind !== "detection") {
+				{processedVolumePrediction.items.flatMap((prediction, sliceIndex) => {
+					if (prediction?.kind !== "object_detection") {
+						return [];
+					}
+
+					const slicePosition = selectedVolume.slicePositions[sliceIndex];
+					if (!slicePosition) {
 						return [];
 					}
 
@@ -95,8 +100,6 @@ const DetectionFundusOverlay: React.FC = () => {
 								fillOpacity={1}
 								stroke={color}
 								strokeWidth={0.1}
-								className="cursor-pointer"
-								onClick={() => console.log("Clicked")}
 							/>
 						);
 					});
@@ -106,4 +109,4 @@ const DetectionFundusOverlay: React.FC = () => {
 	);
 };
 
-export default DetectionFundusOverlay;
+export default DetectionVolumeFundusOverlay;

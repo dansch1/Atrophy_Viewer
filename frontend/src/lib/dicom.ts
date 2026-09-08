@@ -1,20 +1,11 @@
-import type { Laterality } from "@/hooks/viewer/viewerTypes";
 import * as dicomParser from "dicom-parser";
 import type { Pt } from "./vec2";
 
-export type PixelSpacing = { row: number; col: number }; // in mm
+export type DicomLaterality = "L" | "R";
 
-type DicomDataBase = {
-	file: File;
-	patientID: string;
-	studyInstanceUID: string;
-	sopInstanceUID: string;
-	patientName?: string;
-	laterality: Laterality;
-	acquisitionDate: Date;
-	rows: number;
-	cols: number;
-	frames: number;
+export type PixelSpacing = {
+	row: number;
+	col: number;
 };
 
 export type SlicePosition = {
@@ -22,11 +13,17 @@ export type SlicePosition = {
 	p1: Pt;
 };
 
-export type VolumeData = DicomDataBase & {
-	type: "volume";
-	images: ImageData[];
-	slicePositions: SlicePosition[];
-	pixelSpacing: PixelSpacing;
+type DicomDataBase = {
+	id: string;
+	source: "dicom";
+	file: File;
+	patientID: string;
+	patientName?: string;
+	studyInstanceUID: string;
+	laterality: DicomLaterality;
+	acquisitionDate: Date;
+	rows: number;
+	cols: number;
 };
 
 export type FundusData = DicomDataBase & {
@@ -34,26 +31,38 @@ export type FundusData = DicomDataBase & {
 	image: ImageData;
 };
 
-export type DicomData = VolumeData | FundusData;
+export type BscanData = DicomDataBase & {
+	type: "oct_bscan";
+	image: ImageData;
+};
 
-const UID_VOLUME = "1.2.840.10008.5.1.4.1.1.77.1.5.4";
+export type VolumeData = DicomDataBase & {
+	type: "oct_volume";
+	frames: number;
+	images: ImageData[];
+	slicePositions: SlicePosition[];
+	pixelSpacing: PixelSpacing;
+};
+
+export type DicomData = FundusData | BscanData | VolumeData;
+
+const UID_OCT = "1.2.840.10008.5.1.4.1.1.77.1.5.4";
 const UID_FUNDUS = "1.2.840.10008.5.1.4.1.1.77.1.5.1";
 
 export async function getDicomData(file: File): Promise<DicomData> {
 	const arrayBuffer = await file.arrayBuffer();
 	const dataSet = dicomParser.parseDicom(new Uint8Array(arrayBuffer));
 
-	const sopClassUID = dataSet.string("x00080016");
-	const patientID = dataSet.string("x00100020");
-	const studyInstanceUID = dataSet.string("x0020000d");
 	const sopInstanceUID = dataSet.string("x00080018");
 
+	const patientID = dataSet.string("x00100020");
 	const patientName = dataSet.string("x00100010")?.replace("^", ", ").trim();
-	const laterality = dataSet.string("x00200062")?.toUpperCase() as Laterality;
-	const acquisitionDate = (() => {
-		const s = dataSet.string("x00080022") ?? dataSet.string("x0008002a")?.slice(0, 8);
-		return s && /^\d{8}$/.test(s) ? new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)) : undefined;
-	})();
+
+	const sopClassUID = dataSet.string("x00080016");
+	const studyInstanceUID = dataSet.string("x0020000d");
+
+	const laterality = dataSet.string("x00200062")?.toUpperCase();
+	const acquisitionDate = readAcquisitionDate(dataSet);
 
 	const rows = dataSet.uint16("x00280010");
 	const cols = dataSet.uint16("x00280011");
@@ -63,10 +72,10 @@ export async function getDicomData(file: File): Promise<DicomData> {
 	const pixelDataElement = dataSet.elements.x7fe00010;
 
 	if (
+		!sopInstanceUID ||
 		!sopClassUID ||
 		!patientID ||
 		!studyInstanceUID ||
-		!sopInstanceUID ||
 		!laterality ||
 		!acquisitionDate ||
 		!rows ||
@@ -76,17 +85,21 @@ export async function getDicomData(file: File): Promise<DicomData> {
 		throw new Error(`Missing required data in file: ${file.name}`);
 	}
 
-	const base = {
+	if (laterality !== "L" && laterality !== "R") {
+		throw new Error(`Unsupported laterality in file: ${file.name}`);
+	}
+
+	const base: DicomDataBase = {
+		id: sopInstanceUID,
+		source: "dicom",
 		file,
 		patientID,
 		patientName,
 		studyInstanceUID,
-		sopInstanceUID,
 		laterality,
 		acquisitionDate,
 		rows,
 		cols,
-		frames,
 	};
 
 	const pixelData =
@@ -94,41 +107,54 @@ export async function getDicomData(file: File): Promise<DicomData> {
 			? new Uint16Array(dataSet.byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length / 2)
 			: new Uint8Array(dataSet.byteArray.buffer, pixelDataElement.dataOffset, pixelDataElement.length);
 
-	if (sopClassUID === UID_VOLUME) {
-		const images: ImageData[] = [];
+	if (sopClassUID === UID_FUNDUS) {
+		return {
+			...base,
+			type: "fundus",
+			image: normalizeDicom(pixelData, cols, rows),
+		};
+	}
 
-		for (let frame = 0; frame < frames; frame++) {
-			const framePixels = pixelsForFrame(pixelData, frame, rows, cols);
-			images.push(normalizeDicom(framePixels, cols, rows));
+	if (sopClassUID === UID_OCT) {
+		if (frames === 1) {
+			return {
+				...base,
+				type: "oct_bscan",
+				image: normalizeDicom(pixelData, cols, rows),
+			};
 		}
+
+		const images = Array.from({ length: frames }, (_, frame) =>
+			normalizeDicom(pixelsForFrame(pixelData, frame, rows, cols), cols, rows),
+		);
 
 		const slicePositions = readSlicePositions(dataSet);
 		const pixelSpacing = readPixelSpacing(dataSet);
 
-		if (!slicePositions || images.length !== slicePositions.length || images.length !== frames || !pixelSpacing) {
-			throw new Error(`Inconsistent data in volume file: ${file.name}`);
+		if (!slicePositions || images.length !== slicePositions.length || !pixelSpacing) {
+			throw new Error(`Inconsistent data in OCT volume: ${file.name}`);
 		}
 
 		return {
-			type: "volume",
 			...base,
+			type: "oct_volume",
+			frames,
 			images,
 			slicePositions,
 			pixelSpacing,
 		};
 	}
 
-	if (sopClassUID === UID_FUNDUS) {
-		const image = normalizeDicom(pixelData, cols, rows);
+	throw new Error(`DICOM file could not be classified: ${file.name}`);
+}
 
-		return {
-			type: "fundus",
-			...base,
-			image,
-		};
+function readAcquisitionDate(dataSet: dicomParser.DataSet): Date | undefined {
+	const value = dataSet.string("x00080022") ?? dataSet.string("x0008002a")?.slice(0, 8);
+	if (!value || !/^\d{8}$/.test(value)) {
+		return undefined;
 	}
 
-	throw new Error(`DICOM file could not be classified: ${file.name}`);
+	return new Date(+value.slice(0, 4), +value.slice(4, 6) - 1, +value.slice(6, 8));
 }
 
 function pixelsForFrame(pixelData: Uint8Array | Uint16Array, frame: number, rows: number, cols: number) {
@@ -143,24 +169,19 @@ function normalizeDicom(pixelData: Uint8Array | Uint16Array, cols: number, rows:
 	let min = Infinity;
 	let max = -Infinity;
 	for (let i = 0; i < pixelData.length; i++) {
-		const v = pixelData[i] as number;
-
-		if (v < min) {
-			min = v;
-		}
-		if (v > max) {
-			max = v;
-		}
+		min = Math.min(min, pixelData[i]);
+		max = Math.max(max, pixelData[i]);
 	}
 
 	const range = max - min || 1;
-	for (let i = 0; i < cols * rows; i++) {
-		const val = Math.round(((pixelData[i] - min) / range) * 255);
+	for (let i = 0; i < pixelData.length; i++) {
+		const value = ((pixelData[i] - min) / range) * 255;
+		const offset = i * 4;
 
-		imageData.data[i * 4 + 0] = val;
-		imageData.data[i * 4 + 1] = val;
-		imageData.data[i * 4 + 2] = val;
-		imageData.data[i * 4 + 3] = 255;
+		imageData.data[offset] = value;
+		imageData.data[offset + 1] = value;
+		imageData.data[offset + 2] = value;
+		imageData.data[offset + 3] = 255;
 	}
 
 	return imageData;
@@ -243,15 +264,3 @@ function readPixelSpacing(dataSet: dicomParser.DataSet): PixelSpacing | undefine
 	return { row, col }; // mm / px
 }
 
-export const renderDicom = (image: ImageData, canvas: HTMLCanvasElement) => {
-	const ctx = canvas.getContext("2d");
-
-	if (!ctx) {
-		return;
-	}
-
-	canvas.width = image.width;
-	canvas.height = image.height;
-
-	ctx.putImageData(image, 0, 0);
-};

@@ -64,9 +64,9 @@ export function SettingsDialog() {
 
 	const renderPostproc = (config: PostprocConfig) => {
 		switch (config.type) {
-			case "detection":
+			case "object_detection":
 				return renderDetectionPostproc(config);
-			case "class":
+			case "classification":
 				return renderClassPostproc(config);
 			default:
 				return (
@@ -77,7 +77,7 @@ export function SettingsDialog() {
 		}
 	};
 
-	const renderDetectionPostproc = (config: Extract<PostprocConfig, { type: "detection" }>) => (
+	const renderDetectionPostproc = (config: Extract<PostprocConfig, { type: "object_detection" }>) => (
 		<>
 			<span className="text-muted-foreground">Score threshold</span>
 			<span className="text-foreground/80">
@@ -135,7 +135,7 @@ export function SettingsDialog() {
 		</>
 	);
 
-	const renderClassPostproc = (config: Extract<PostprocConfig, { type: "class" }>) => (
+	const renderClassPostproc = (config: Extract<PostprocConfig, { type: "classification" }>) => (
 		<>
 			{selectedModelClasses?.map((className, cls) => (
 				<React.Fragment key={`threshold-${className}`}>
@@ -170,7 +170,7 @@ export function SettingsDialog() {
 					<Settings className="w-5 h-5" />
 				</Button>
 			</DialogTrigger>
-			<DialogContent className="bg-secondary">
+			<DialogContent className="bg-secondary max-h-[90vh] overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>Settings</DialogTitle>
 					<DialogDescription>Adjust user preferences and display options.</DialogDescription>
@@ -198,9 +198,6 @@ export function SettingsDialog() {
 					{/* Section: Postprocessing */}
 					<h4 className="col-span-2 text-sm font-semibold text-foreground mt-4 mb-2">Postprocessing</h4>
 
-					{/* Section: Legend */}
-					<h4 className="col-span-2 text-sm font-semibold text-foreground mt-4 mb-2">Legend</h4>
-
 					{selectedPostprocConfig ? (
 						renderPostproc(selectedPostprocConfig)
 					) : (
@@ -208,6 +205,9 @@ export function SettingsDialog() {
 							Postprocessing is not available for this model.
 						</span>
 					)}
+
+					{/* Section: Legend */}
+					<h4 className="col-span-2 text-sm font-semibold text-foreground mt-4 mb-2">Legend</h4>
 
 					{[...models].map(([modelId, modelInfo]) => (
 						<React.Fragment key={modelId}>

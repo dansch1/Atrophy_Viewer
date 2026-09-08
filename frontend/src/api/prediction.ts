@@ -1,34 +1,43 @@
 import { z } from "zod";
 import { fetchWithTimeout } from "./http";
-import { ModelTaskSchema, type ModelTask } from "./model";
+import {
+	ImageTypeSchema,
+	ModelTaskSchema,
+	PredictionScopeSchema,
+	type ImageType,
+	type ModelTask,
+	type PredictionScope,
+} from "./model";
 
 const BoxSchema = z.tuple([z.number(), z.number(), z.number(), z.number()]);
 
 const DetectionPredictionSchema = z.object({
-	kind: z.literal("detection"),
+	kind: z.literal("object_detection"),
 	boxes: z.array(BoxSchema),
 	scores: z.array(z.number()),
 	classes: z.array(z.number().int()),
 });
 
 const ClassPredictionSchema = z.object({
-	kind: z.literal("class"),
+	kind: z.literal("classification"),
 	scores: z.array(z.number()),
 });
 
-const SlicePredictionSchema = z.discriminatedUnion("kind", [DetectionPredictionSchema, ClassPredictionSchema]);
+const PredictionSchema = z.discriminatedUnion("kind", [DetectionPredictionSchema, ClassPredictionSchema]);
 
 const StreamMsgSchema = z.discriminatedUnion("type", [
 	z.object({
 		type: z.literal("meta"),
 		model: z.string(),
 		task: ModelTaskSchema,
-		slices: z.number().int(),
+		image_type: ImageTypeSchema,
+		prediction_scope: PredictionScopeSchema,
+		count: z.number().int().positive(),
 	}),
 	z.object({
-		type: z.literal("slice"),
-		i: z.number().int(),
-		pred: SlicePredictionSchema,
+		type: z.literal("prediction"),
+		i: z.number().int().nonnegative(),
+		pred: PredictionSchema,
 	}),
 	z.object({
 		type: z.literal("done"),
@@ -44,13 +53,18 @@ export type Box = z.infer<typeof BoxSchema>;
 export type DetectionPrediction = z.infer<typeof DetectionPredictionSchema>;
 export type ClassPrediction = z.infer<typeof ClassPredictionSchema>;
 
-export type SlicePrediction = z.infer<typeof SlicePredictionSchema>;
-export type VolumePrediction = Array<SlicePrediction | null>;
+export type Prediction = z.infer<typeof PredictionSchema>;
+export type PredictionResult = {
+	scope: PredictionScope;
+	items: Array<Prediction | null>;
+};
 
 export type PredictionMeta = {
 	model: string;
 	task: ModelTask;
-	slices: number;
+	imageType: ImageType;
+	scope: PredictionScope;
+	count: number;
 };
 
 export async function streamPredictions(
@@ -60,16 +74,17 @@ export async function streamPredictions(
 		controller?: AbortController;
 		slices?: number[];
 		onMeta?: (meta: PredictionMeta) => void;
-		onSlice?: (i: number, pred: SlicePrediction) => void;
+		onPred?: (i: number, pred: Prediction) => void;
 		onDone?: () => void;
 		onError?: (message: string) => void;
 	},
 ): Promise<void> {
 	const formData = new FormData();
+
 	formData.append("file", file);
 	formData.append("model", model);
 
-	if (opts?.slices && opts.slices.length > 0) {
+	if (opts?.slices?.length) {
 		formData.append("slices", JSON.stringify(opts.slices));
 	}
 
@@ -95,42 +110,51 @@ export async function streamPredictions(
 	const decoder = new TextDecoder("utf-8");
 
 	let buffer = "";
-
-	while (true) {
-		const { value, done } = await reader.read();
-		if (done) {
-			break;
+	const processLine = (line: string) => {
+		if (!line) {
+			return;
 		}
 
-		buffer += decoder.decode(value, { stream: true });
+		const msg = StreamMsgSchema.parse(JSON.parse(line));
 
-		let nlIndex: number;
-		while ((nlIndex = buffer.indexOf("\n")) !== -1) {
-			const line = buffer.slice(0, nlIndex).trim();
-			buffer = buffer.slice(nlIndex + 1);
-
-			if (!line) {
-				continue;
-			}
-
-			const raw = JSON.parse(line);
-			const msg = StreamMsgSchema.parse(raw);
-
-			if (msg.type === "meta") {
+		switch (msg.type) {
+			case "meta":
 				opts?.onMeta?.({
 					model: msg.model,
 					task: msg.task,
-					slices: msg.slices,
+					imageType: msg.image_type,
+					scope: msg.prediction_scope,
+					count: msg.count,
 				});
-			} else if (msg.type === "slice") {
-				opts?.onSlice?.(msg.i, msg.pred);
-			} else if (msg.type === "done") {
+				break;
+			case "prediction":
+				opts?.onPred?.(msg.i, msg.pred);
+				break;
+			case "done":
 				opts?.onDone?.();
-			} else if (msg.type === "error") {
-				const message = msg.message ?? "Unknown error";
-				opts?.onError?.(message);
-				throw new Error(message);
+				break;
+			case "error": {
+				const errorMessage = msg.message ?? "Unknown error";
+				opts?.onError?.(errorMessage);
+				throw new Error(errorMessage);
 			}
 		}
+	};
+
+	while (true) {
+		const { value, done } = await reader.read();
+		buffer += decoder.decode(value, { stream: !done });
+
+		let nlIndex: number;
+		while ((nlIndex = buffer.indexOf("\n")) !== -1) {
+			processLine(buffer.slice(0, nlIndex).trim());
+			buffer = buffer.slice(nlIndex + 1);
+		}
+
+		if (done) {
+			break;
+		}
 	}
+
+	processLine(buffer.trim());
 }

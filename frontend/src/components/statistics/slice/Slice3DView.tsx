@@ -8,22 +8,21 @@ import { Canvas } from "@react-three/fiber";
 import React, { useMemo } from "react";
 import * as THREE from "three";
 
-const Lesion3DView: React.FC = () => {
-	const { selectedVolume, selectedModelInfo, processedVolumePrediction, hiddenClasses, selectedModelColors } =
-		useViewer();
+const VolumeLesion3DView: React.FC = () => {
+	const { selectedVolume, hiddenClasses, processedVolumePrediction, selectedModelColors } = useViewer();
 
 	const data = useMemo(() => {
-		if (!selectedVolume || !selectedModelInfo?.capabilities.boxes) {
+		if (!selectedVolume) {
 			return null;
 		}
 
-		if (!processedVolumePrediction) {
+		if (!processedVolumePrediction || processedVolumePrediction.scope !== "slice") {
 			return [];
 		}
 
-		return processedVolumePrediction.map((prediction, sliceIndex) => {
+		return processedVolumePrediction.items.map((prediction, sliceIndex) => {
 			const z = computeSliceZ(selectedVolume.slicePositions, sliceIndex);
-			if (prediction?.kind !== "detection") {
+			if (prediction?.kind !== "object_detection") {
 				return {
 					z,
 					items: [],
@@ -39,7 +38,7 @@ const Lesion3DView: React.FC = () => {
 				})),
 			};
 		});
-	}, [selectedVolume, selectedModelInfo, processedVolumePrediction]);
+	}, [selectedVolume, processedVolumePrediction]);
 
 	function computeSliceZ(slicePositions: SlicePosition[], sliceIndex: number): number {
 		const first = mid(slicePositions[0].p0, slicePositions[0].p1);
@@ -104,49 +103,51 @@ const Lesion3DView: React.FC = () => {
 		return new THREE.Vector2(cx - x, cy - y);
 	}
 
+	if (!data || !selectedVolume) {
+		return null;
+	}
+
 	return (
 		<Card className="h-full">
 			<CardHeader>
 				<CardTitle>3D Lesions</CardTitle>
 			</CardHeader>
 
-			{data && selectedVolume && (
-				<CardContent>
-					<div className="h-[500px] bg-secondary">
-						<Canvas className="w-full h-full" camera={{ position: [0, 0, 6], fov: 45 }}>
-							<ambientLight intensity={0.6} />
-							<directionalLight position={[6, 10, 6]} intensity={0.8} />
+			<CardContent>
+				<div className="h-[500px] bg-secondary">
+					<Canvas className="w-full h-full" camera={{ position: [0, 0, 6], fov: 45 }}>
+						<ambientLight intensity={0.6} />
+						<directionalLight position={[6, 10, 6]} intensity={0.8} />
 
-							<Bounds fit clip margin={1.2}>
-								<group>
-									{data.map((slice, i) => (
-										<group key={`lesion-${i}`} position={[0, 0, slice.z]}>
-											{slice.items
-												.filter((it) => !hiddenClasses.has(it.cls))
-												.map((it) => (
-													<LesionBoxMesh
-														key={it.key}
-														box={it.box}
-														cols={selectedVolume.cols}
-														rows={selectedVolume.rows}
-														color={selectedModelColors.getColorByIndex(it.cls)}
-													/>
-												))}
-										</group>
-									))}
-								</group>
-							</Bounds>
+						<Bounds fit clip margin={1.2}>
+							<group>
+								{data.map((slice, i) => (
+									<group key={`lesion-${i}`} position={[0, 0, slice.z]}>
+										{slice.items
+											.filter((it) => !hiddenClasses.has(it.cls))
+											.map((it) => (
+												<LesionBoxMesh
+													key={it.key}
+													box={it.box}
+													cols={selectedVolume.cols}
+													rows={selectedVolume.rows}
+													color={selectedModelColors.getColorByIndex(it.cls)}
+												/>
+											))}
+									</group>
+								))}
+							</group>
+						</Bounds>
 
-							<OrbitControls makeDefault enableDamping dampingFactor={0.08} />
-							<GizmoHelper>
-								<GizmoViewport />
-							</GizmoHelper>
-						</Canvas>
-					</div>
-				</CardContent>
-			)}
+						<OrbitControls makeDefault enableDamping dampingFactor={0.08} />
+						<GizmoHelper>
+							<GizmoViewport />
+						</GizmoHelper>
+					</Canvas>
+				</div>
+			</CardContent>
 		</Card>
 	);
 };
 
-export default Lesion3DView;
+export default VolumeLesion3DView;

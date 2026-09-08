@@ -23,24 +23,11 @@ export function HelpDialog() {
 			<DialogContent className="bg-secondary">
 				<DialogHeader>
 					<DialogTitle>Help</DialogTitle>
-					<DialogDescription>
-						Upload and analyze OCT volume files with corresponding fundus images.
-					</DialogDescription>
+					<DialogDescription>Description.</DialogDescription>
 				</DialogHeader>
 				<div className="text-sm space-y-2">
-					<p>
-						This tool allows you to upload Optical Coherence Tomography (OCT) volume data along with
-						associated fundus images in DICOM format.
-					</p>
-					<p>
-						It automatically predicts different biomarkers across all B-scan slices in the volume. The
-						prediction results are then projected and visualized on the corresponding fundus image for
-						spatial reference and analysis.
-					</p>
-					<p>
-						This facilitates accurate assessment, visualization, and review of progression across imaging
-						modalities.
-					</p>
+					<p>Paragraph 1.</p>
+					<p>Paragraph 2.</p>
 				</div>
 			</DialogContent>
 		</Dialog>

@@ -1,15 +1,15 @@
 import type { ModelInfo } from "@/api/model";
-import type { Box, DetectionPrediction, SlicePrediction, VolumePrediction } from "@/api/prediction";
+import type { Box, DetectionPrediction, PredictionResult, Prediction } from "@/api/prediction";
 
 type DetectionPostprocConfig = {
-	type: "detection";
+	type: "object_detection";
 	scoreThreshold: number;
 	nmsIouThreshold: number;
 	topK: number;
 };
 
 type ClassPostprocConfig = {
-	type: "class";
+	type: "classification";
 	thresholds: number[];
 };
 
@@ -21,40 +21,39 @@ export function createPostprocConfig(model: ModelInfo): PostprocConfig | undefin
 	}
 
 	switch (model.postproc_config.type) {
-		case "detection":
+		case "object_detection":
 			return {
-				type: "detection",
+				type: "object_detection",
 				scoreThreshold: model.postproc_config.score_threshold,
 				nmsIouThreshold: model.postproc_config.nms_iou_threshold,
 				topK: model.postproc_config.top_k,
 			};
 
-		case "class":
+		case "classification":
 			return {
-				type: "class",
+				type: "classification",
 				thresholds: [...model.postproc_config.thresholds],
 			};
 	}
 }
 
-export function postprocessVolume(volume: VolumePrediction, config: PostprocConfig): VolumePrediction {
-	return volume.map((prediction) => postprocessPrediction(prediction, config));
+export function postprocessPredictionResult(prediction: PredictionResult, config?: PostprocConfig): PredictionResult {
+	return {
+		...prediction,
+		items: prediction.items.map((item) => postprocessPrediction(item, config)),
+	};
 }
 
-function postprocessPrediction(prediction: SlicePrediction | null, config: PostprocConfig): SlicePrediction | null {
+function postprocessPrediction(prediction: Prediction | null, config?: PostprocConfig): Prediction | null {
 	if (!prediction) {
 		return null;
 	}
 
-	if (prediction.kind === "class") {
-		return prediction;
+	if (prediction.kind === "object_detection" && config?.type === "object_detection") {
+		return postprocessDetection(prediction, config);
 	}
 
-	if (config.type !== "detection") {
-		return prediction;
-	}
-
-	return postprocessDetection(prediction, config);
+	return prediction;
 }
 
 function postprocessDetection(prediction: DetectionPrediction, config: DetectionPostprocConfig): DetectionPrediction {
@@ -83,7 +82,7 @@ function postprocessDetection(prediction: DetectionPrediction, config: Detection
 	const selected = config.topK > 0 ? keep.slice(0, config.topK) : keep;
 
 	return {
-		kind: "detection",
+		kind: "object_detection",
 		boxes: selected.map((i) => prediction.boxes[i]),
 		scores: selected.map((i) => prediction.scores[i]),
 		classes: selected.map((i) => prediction.classes[i]),
@@ -111,6 +110,6 @@ export function area(box: Box): number {
 }
 
 export function isClassPositive(score: number, classIndex: number, config?: PostprocConfig): boolean {
-	const threshold = (config?.type === "class" ? config.thresholds[classIndex] : undefined) ?? 0.5;
+	const threshold = (config?.type === "classification" ? config.thresholds[classIndex] : undefined) ?? 0.5;
 	return score >= threshold;
 }

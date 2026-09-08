@@ -1,24 +1,166 @@
 import { fetchModels, type ModelMap } from "@/api/model";
-import type { VolumePrediction } from "@/api/prediction";
+import type { Prediction, PredictionResult } from "@/api/prediction";
 import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
 import { usePersistentState } from "@/hooks/usePersistentState";
+import type { FileData } from "@/lib/images";
 import { ModelColors } from "@/lib/modelColors";
-import { createPostprocConfig, postprocessVolume, type PostprocConfig } from "@/lib/postprocess";
+import { createPostprocConfig, postprocessPredictionResult, type PostprocConfig } from "@/lib/postprocess";
 import { showError } from "@/lib/toast";
-import { useEffect, useMemo, useState, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState, type SetStateAction } from "react";
 import { usePersistentModelColors } from "../usePersistentModelColors";
-import { useDicomImport } from "./useDicomImport";
+import { getExamImages, STANDALONE_PATIENT_ID } from "./imageExams";
+import { useImageImport } from "./useImageImport";
 import { usePredictionsController } from "./usePredictionsController";
 import { useViewerNav } from "./useViewerNav";
-import type { DicomPairsByLaterality, ViewerState } from "./viewerTypes";
+import type { ImageExam, ImageExamsByLat, Laterality, PredictionMap, ViewerState, ViewMode } from "./viewerTypes";
+
+type ImageSelection = {
+	fundusId?: string;
+	octId?: string;
+};
+
+function getSelectedImages(exam: ImageExam, selection?: ImageSelection): FileData[] {
+	const fundus = exam.fundus.find((image) => image.id === selection?.fundusId) ?? exam.fundus[0];
+
+	const octImages = [...exam.volumes, ...exam.bscans];
+	const oct = octImages.find((image) => image.id === selection?.octId) ?? octImages[0];
+
+	return [fundus, oct, exam.rasters[0]].filter((image): image is FileData => image !== undefined);
+}
+
+function getDisplayedPrediction(
+	imagePrediction: PredictionResult | undefined,
+	sliceIndex?: number,
+): Prediction | undefined {
+	if (!imagePrediction) {
+		return undefined;
+	}
+
+	if (imagePrediction.scope === "image") {
+		return imagePrediction.items[0] ?? undefined;
+	}
+
+	if (imagePrediction.scope === "slice" && sliceIndex !== undefined) {
+		return imagePrediction.items[sliceIndex] ?? undefined;
+	}
+
+	return undefined;
+}
 
 export function useViewerState(): ViewerState {
 	const { start, stop } = useGlobalLoader();
 	const { nav, dispatch } = useViewerNav();
 
-	// Pairs
-	const setDicomPairs = (files: DicomPairsByLaterality) => dispatch({ type: "SET_DICOM_PAIRS", payload: files });
-	const loadDicomPairs = useDicomImport(setDicomPairs);
+	// Images
+	const setImageExams = useCallback(
+		(exams: ImageExamsByLat) => dispatch({ type: "SET_IMAGE_EXAMS", payload: exams }),
+		[dispatch],
+	);
+	const loadImages = useImageImport(setImageExams);
+
+	// Patients
+	const patientInfo = useMemo(() => {
+		const map = new Map<string, string>();
+
+		for (const [patientId, scans] of Object.entries(nav.imageExams)) {
+			if (patientId === STANDALONE_PATIENT_ID) {
+				map.set(patientId, "Uploaded images");
+				continue;
+			}
+
+			const images = [...scans.L, ...scans.R, ...scans.U].flatMap((exam) => getExamImages(exam));
+			const patientName = images
+				.map((image) => (image.source === "dicom" ? image.patientName : undefined))
+				.find((name): name is string => !!name);
+
+			map.set(patientId, patientName ?? `Unknown (${patientId})`);
+		}
+
+		return map;
+	}, [nav.imageExams]);
+
+	const setSelectedPatient = useCallback((id: string) => dispatch({ type: "SET_PATIENT", payload: id }), [dispatch]);
+
+	// Laterality
+	const setSelectedLaterality = useCallback(
+		(lat: Laterality) => dispatch({ type: "SET_LATERALITY", payload: lat }),
+		[dispatch],
+	);
+
+	// Exams
+	const currentExams = useMemo(() => {
+		if (!nav.selectedPatient) {
+			return [];
+		}
+
+		return nav.imageExams[nav.selectedPatient]?.[nav.selectedLaterality] ?? [];
+	}, [nav.imageExams, nav.selectedPatient, nav.selectedLaterality]);
+
+	const selectedExam = currentExams[nav.selectedExamIndex];
+
+	// Selected Images
+	const [selections, setSelections] = useState<Map<ImageExam, ImageSelection>>(new Map());
+	const selection = selectedExam ? selections.get(selectedExam) : undefined;
+
+	const selectedEyeImages = useMemo(
+		() => currentExams.flatMap((exam) => getSelectedImages(exam, selections.get(exam))),
+		[currentExams, selections],
+	);
+
+	const setSelectedImages = useCallback(
+		(images: FileData[]) => {
+			if (!selectedExam) {
+				return;
+			}
+
+			const fundus = images.find((image) => image.source === "dicom" && image.type === "fundus");
+			const oct = images.find(
+				(image) => image.source === "dicom" && (image.type === "oct_volume" || image.type === "oct_bscan"),
+			);
+
+			setSelections((prev) => {
+				const next = new Map(prev);
+				next.set(selectedExam, {
+					fundusId: fundus?.id,
+					octId: oct?.id,
+				});
+				return next;
+			});
+		},
+		[selectedExam],
+	);
+
+	const selectedFundus =
+		selectedExam?.fundus.find((image) => image.id === selection?.fundusId) ?? selectedExam?.fundus[0];
+
+	const octImages = selectedExam ? [...selectedExam.volumes, ...selectedExam.bscans] : [];
+	const selectedOct = octImages.find((image) => image.id === selection?.octId) ?? octImages[0];
+
+	const selectedVolume = selectedOct?.type === "oct_volume" ? selectedOct : undefined;
+
+	const selectedRaster = selectedExam?.rasters[0];
+
+	const setSelectedExamIndex = useCallback(
+		(index: number) => dispatch({ type: "SET_EXAM", payload: index }),
+		[dispatch],
+	);
+
+	// Slices
+	const selectedSlice = selectedVolume
+		? Math.min(nav.selectedSlice, Math.max(0, selectedVolume.frames - 1))
+		: nav.selectedSlice;
+
+	const setSelectedSlice = useCallback(
+		(index: number) => dispatch({ type: "SET_SLICE", payload: index }),
+		[dispatch],
+	);
+
+	// View
+	const setViewMode = useCallback((mode: ViewMode) => dispatch({ type: "SET_VIEW_MODE", payload: mode }), [dispatch]);
+	const setShowSlices = useCallback(
+		(value: boolean) => dispatch({ type: "SET_SHOW_SLICES", payload: value }),
+		[dispatch],
+	);
 
 	// Models
 	const [models, setModels] = useState<ModelMap>(new Map());
@@ -29,8 +171,13 @@ export function useViewerState(): ViewerState {
 	const [hiddenClasses, setHiddenClasses] = useState<Set<number>>(new Set());
 
 	// Predictions
-	const [predictions, setPredictions] = useState<Map<string, Map<string, VolumePrediction>>>(new Map());
+	const [predictions, setPredictions] = useState<PredictionMap>(new Map());
 	const [loadingPredictions, setLoadingPredictions] = useState<Map<string, Set<string>>>(new Map());
+
+	const setShowPredictions = useCallback(
+		(value: boolean) => dispatch({ type: "SET_SHOW_PREDICTIONS", payload: value }),
+		[dispatch],
+	);
 
 	// Stats
 	const [showStats, setShowStats] = useState(false);
@@ -53,107 +200,95 @@ export function useViewerState(): ViewerState {
 		return postprocessByModel[selectedModel] ?? createPostprocConfig(selectedModelInfo);
 	}, [selectedModel, selectedModelInfo, postprocessByModel]);
 
-	const setSelectedPostprocConfig = (update: SetStateAction<PostprocConfig>) => {
-		if (!selectedModel || !selectedModelInfo) {
-			return;
-		}
+	const setSelectedPostprocConfig = useCallback(
+		(update: SetStateAction<PostprocConfig>) => {
+			if (!selectedModel || !selectedModelInfo) {
+				return;
+			}
 
-		setPostprocessByModel((prev) => {
-			const current = prev[selectedModel] ?? createPostprocConfig(selectedModelInfo);
-			const next = typeof update === "function" ? update(current) : update;
+			setPostprocessByModel((prev) => {
+				const current = prev[selectedModel] ?? createPostprocConfig(selectedModelInfo);
+				if (!current) {
+					return prev;
+				}
 
-			return {
-				...prev,
-				[selectedModel]: next,
-			};
-		});
-	};
+				const next = typeof update === "function" ? update(current) : update;
+
+				return {
+					...prev,
+					[selectedModel]: next,
+				};
+			});
+		},
+		[selectedModel, selectedModelInfo, setPostprocessByModel],
+	);
 
 	const [modelColors, setModelColors] = usePersistentModelColors("viewer:modelColors");
 	const emptyClassColors = useMemo(() => new ModelColors([], []), []);
-	const selectedModelColors = selectedModel ? modelColors[selectedModel] : emptyClassColors;
-
-	// Derived
-	// Patients
-	const patientInfo = useMemo(() => {
-		const map = new Map<string, string>();
-
-		for (const [patientID, scans] of Object.entries(nav.dicomPairs)) {
-			const allPairs = [...scans.L, ...scans.R];
-			const volumeWithName = allPairs.map((p) => p.volume).find((v) => v.patientName);
-
-			const name = volumeWithName?.patientName ?? `Unknown (${patientID})`;
-			map.set(patientID, name);
-		}
-
-		return map;
-	}, [nav.dicomPairs]);
-
-	// Pairs
-	const currentPairs = useMemo(() => {
-		if (!nav.selectedPatient) {
-			return [];
-		}
-
-		return nav.dicomPairs[nav.selectedPatient]?.[nav.selectedLaterality] ?? [];
-	}, [nav.dicomPairs, nav.selectedPatient, nav.selectedLaterality]);
-
-	const selectedVolume = currentPairs[nav.selectedPair]?.volume;
-	const selectedFundus = currentPairs[nav.selectedPair]?.fundus;
+	const selectedModelColors = selectedModel ? (modelColors[selectedModel] ?? emptyClassColors) : emptyClassColors;
 
 	// Predictions (processed)
 	const processedPredictions = useMemo(() => {
-		const result = new Map<string, Map<string, VolumePrediction>>();
+		const result: PredictionMap = new Map();
 
-		for (const [modelId, volumes] of predictions) {
+		for (const [modelId, images] of predictions) {
 			const modelInfo = models.get(modelId);
 			if (!modelInfo) {
 				continue;
 			}
 
-			const settings = postprocessByModel[modelId] ?? createPostprocConfig(modelInfo);
-			const processedVolumes = new Map<string, VolumePrediction>();
+			const config = postprocessByModel[modelId] ?? createPostprocConfig(modelInfo);
+			const processedImages = new Map<string, PredictionResult>();
 
-			for (const [sopInstanceUID, volumePrediction] of volumes) {
-				processedVolumes.set(sopInstanceUID, postprocessVolume(volumePrediction, settings));
+			for (const [imageId, imagePrediction] of images) {
+				processedImages.set(imageId, postprocessPredictionResult(imagePrediction, config));
 			}
-
-			result.set(modelId, processedVolumes);
+			result.set(modelId, processedImages);
 		}
 
 		return result;
 	}, [predictions, models, postprocessByModel]);
 
-	const processedVolumePrediction =
-		selectedModel && selectedVolume
-			? processedPredictions.get(selectedModel)?.get(selectedVolume.sopInstanceUID)
-			: undefined;
+	const selectedModelPredictions = selectedModel ? processedPredictions.get(selectedModel) : undefined;
 
-	const processedSlicePrediction = processedVolumePrediction?.[nav.selectedSlice] ?? undefined;
+	const processedFundusPrediction = getDisplayedPrediction(
+		selectedFundus ? selectedModelPredictions?.get(selectedFundus.id) : undefined,
+	);
 
-	// Prediction controller
-	const { cancelAllPredictionRequests, hasPrediction, predictCurrent, predictAll } = usePredictionsController({
-		currentPairs,
+	const processedVolumePrediction = selectedVolume ? selectedModelPredictions?.get(selectedVolume.id) : undefined;
+
+	const processedOctPrediction = getDisplayedPrediction(
+		selectedOct ? selectedModelPredictions?.get(selectedOct.id) : undefined,
+		selectedVolume ? selectedSlice : undefined,
+	);
+
+	const processedRasterPrediction = getDisplayedPrediction(
+		selectedRaster ? selectedModelPredictions?.get(selectedRaster.id) : undefined,
+	);
+
+	const { cancelAllPredictionRequests, predictImages } = usePredictionsController({
 		selectedModel,
+		selectedModelInfo,
 		predictions,
 		setPredictions,
 		loadingPredictions,
 		setLoadingPredictions,
 	});
 
-	// On new dicomPairs: cancel + reset predictions state
+	// On new images: cancel + reset predictions state
 	useEffect(() => {
 		cancelAllPredictionRequests();
 		setPredictions(() => new Map());
 		setLoadingPredictions(() => new Map());
-		dispatch({ type: "SET_SHOW_PREDICTIONS", payload: false });
-	}, [nav.dicomPairs, cancelAllPredictionRequests, dispatch]);
+		setSelections(() => new Map());
+		setShowPredictions(false);
+	}, [nav.imageExams, cancelAllPredictionRequests, setShowPredictions]);
 
 	// On model change: cancel outstanding requests + hide overlay
 	useEffect(() => {
 		cancelAllPredictionRequests();
-		dispatch({ type: "SET_SHOW_PREDICTIONS", payload: false });
-	}, [selectedModel, cancelAllPredictionRequests, dispatch]);
+		setShowPredictions(false);
+	}, [selectedModel, cancelAllPredictionRequests, setShowPredictions]);
 
 	// Disable overlay if no predictions exist
 	useEffect(() => {
@@ -161,15 +296,30 @@ export function useViewerState(): ViewerState {
 			return;
 		}
 
-		const model = selectedModel;
-		const uid = selectedVolume?.sopInstanceUID;
-
-		const predicted = !!model && !!uid && (hasPrediction(model, uid) || loadingPredictions.get(model)?.has(uid));
-
-		if (!predicted) {
-			dispatch({ type: "SET_SHOW_PREDICTIONS", payload: false });
+		if (!selectedModel) {
+			setShowPredictions(false);
+			return;
 		}
-	}, [nav.showPredictions, selectedModel, selectedVolume, hasPrediction, loadingPredictions, dispatch]);
+
+		const modelPredictions = predictions.get(selectedModel);
+		const modelLoading = loadingPredictions.get(selectedModel);
+		const available = [selectedFundus, selectedOct, selectedRaster].some(
+			(image) => image !== undefined && (modelPredictions?.has(image.id) || modelLoading?.has(image.id)),
+		);
+
+		if (!available) {
+			setShowPredictions(false);
+		}
+	}, [
+		nav.showPredictions,
+		selectedModel,
+		selectedFundus,
+		selectedOct,
+		selectedRaster,
+		predictions,
+		loadingPredictions,
+		setShowPredictions,
+	]);
 
 	// Load models once
 	useEffect(() => {
@@ -198,7 +348,7 @@ export function useViewerState(): ViewerState {
 
 					return updated;
 				});
-			} catch (err: any) {
+			} catch (err) {
 				console.error("Model request failed", err);
 				showError("Model error", "Failed to load the models. Please reload the page or try again later.");
 			} finally {
@@ -215,37 +365,44 @@ export function useViewerState(): ViewerState {
 	}, [selectedModel]);
 
 	return {
-		// Files
-		dicomPairs: nav.dicomPairs,
-		loadDicomPairs,
+		// Images
+		imageExams: nav.imageExams,
+		loadImages,
 
 		// Patients
 		patientInfo,
 		selectedPatient: nav.selectedPatient,
-		setSelectedPatient: (id) => dispatch({ type: "SET_PATIENT", payload: id }),
+		setSelectedPatient,
 
 		// Laterality
 		selectedLaterality: nav.selectedLaterality,
-		setSelectedLaterality: (lat) => dispatch({ type: "SET_LATERALITY", payload: lat }),
+		setSelectedLaterality,
 
-		// Pairs
-		currentPairs,
-		selectedPair: nav.selectedPair,
-		setSelectedPair: (i) => dispatch({ type: "SET_PAIR", payload: i }),
+		// Exams
+		currentExams,
+		selectedExamIndex: nav.selectedExamIndex,
+		setSelectedExamIndex,
+		selectedExam,
 
-		selectedVolume,
+		// Selected images
+		selectedEyeImages,
+		setSelectedImages,
+
 		selectedFundus,
+		selectedVolume,
+		selectedOct,
+		selectedRaster,
 
 		// Slices
-		selectedSlice: nav.selectedSlice,
-		setSelectedSlice: (i) => dispatch({ type: "SET_SLICE", payload: i }),
+		selectedSlice,
+		setSelectedSlice,
 
 		// View
 		viewMode: nav.viewMode,
-		setViewMode: (m) => dispatch({ type: "SET_VIEWMODE", payload: m }),
+		setViewMode,
 
 		showSlices: nav.showSlices,
-		setShowSlices: (v) => dispatch({ type: "SET_SHOW_SLICES", payload: v }),
+		setShowSlices,
 
 		// Models
 		models,
@@ -258,19 +415,21 @@ export function useViewerState(): ViewerState {
 		hiddenClasses,
 		setHiddenClasses,
 
-		// Predictions
+		// Predictions (raw)
 		predictions,
 		loadingPredictions,
 
+		// Predictions (processed)
 		processedPredictions,
+		processedFundusPrediction,
 		processedVolumePrediction,
-		processedSlicePrediction,
+		processedOctPrediction,
+		processedRasterPrediction,
 
-		// Prediction UI + commands
+		// Prediction controller
 		showPredictions: nav.showPredictions,
-		setShowPredictions: (v) => dispatch({ type: "SET_SHOW_PREDICTIONS", payload: v }),
-		predictCurrent: () => predictCurrent(nav.selectedPair),
-		predictAll,
+		setShowPredictions,
+		predictImages,
 
 		// Stats
 		showStats,

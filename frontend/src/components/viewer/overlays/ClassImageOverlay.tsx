@@ -3,8 +3,8 @@ import { useViewer } from "@/context/ViewerStateProvider";
 import { isClassPositive } from "@/lib/postprocess";
 import React from "react";
 
-const ClassSliceOverlay: React.FC<{ prediction: ClassPrediction }> = ({ prediction }) => {
-	const { selectedModelClasses, selectedPostprocConfig, hiddenClasses, showScores, selectedModelColors } =
+const ClassImageOverlay: React.FC<{ prediction: ClassPrediction }> = ({ prediction }) => {
+	const { selectedModelClasses, hiddenClasses, showScores, selectedPostprocConfig, selectedModelColors } =
 		useViewer();
 
 	if (!selectedModelClasses) {
@@ -44,4 +44,4 @@ const ClassSliceOverlay: React.FC<{ prediction: ClassPrediction }> = ({ predicti
 	);
 };
 
-export default ClassSliceOverlay;
+export default ClassImageOverlay;

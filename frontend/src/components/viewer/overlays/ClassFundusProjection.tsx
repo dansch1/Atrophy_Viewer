@@ -3,18 +3,18 @@ import { isClassPositive } from "@/lib/postprocess";
 import { unitNormal } from "@/lib/vec2";
 import React from "react";
 
-const ClassFundusOverlay: React.FC = () => {
-	const { selectedVolume, processedVolumePrediction, selectedPostprocConfig, hiddenClasses, selectedModelColors } =
+const ClassVolumeFundusOverlay: React.FC = () => {
+	const { selectedVolume, hiddenClasses, processedVolumePrediction, selectedPostprocConfig, selectedModelColors } =
 		useViewer();
 
-	if (!selectedVolume || !processedVolumePrediction) {
+	if (!selectedVolume || !processedVolumePrediction || processedVolumePrediction.scope !== "slice") {
 		return null;
 	}
 
 	return (
 		<svg className="absolute top-0 left-0 w-full h-full">
-			{processedVolumePrediction.flatMap((prediction, sliceIndex) => {
-				if (prediction?.kind !== "class") {
+			{processedVolumePrediction.items.flatMap((prediction, sliceIndex) => {
+				if (prediction?.kind !== "classification") {
 					return [];
 				}
 
@@ -65,4 +65,4 @@ const ClassFundusOverlay: React.FC = () => {
 	);
 };
 
-export default ClassFundusOverlay;
+export default ClassVolumeFundusOverlay;

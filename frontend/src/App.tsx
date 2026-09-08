@@ -3,27 +3,27 @@ import React, { useEffect, useRef } from "react";
 import type { ImperativePanelHandle } from "react-resizable-panels";
 import { Toaster } from "sonner";
 import Controls from "./components/Controls";
-import DicomViewer from "./components/dicomViewer";
 import { GlobalLoader } from "./components/GlobalLoader";
 import Header from "./components/Header";
 import ResearchBanner from "./components/ResearchBanner";
 import Statistics from "./components/statistics";
+import Viewer from "./components/viewer";
 import { useViewer } from "./context/ViewerStateProvider";
 
 const App: React.FC = () => {
-	const { currentPairs, showStats, setShowStats } = useViewer();
-
+	const { currentExams, showStats, setShowStats } = useViewer();
 	const statsPanelRef = useRef<ImperativePanelHandle>(null);
 
 	useEffect(() => {
-		if (!statsPanelRef) {
+		const panel = statsPanelRef.current;
+		if (!panel) {
 			return;
 		}
 
 		if (showStats) {
-			statsPanelRef.current?.expand();
+			panel.expand();
 		} else {
-			statsPanelRef.current?.collapse();
+			panel.collapse();
 		}
 	}, [showStats]);
 
@@ -37,10 +37,10 @@ const App: React.FC = () => {
 				<Header />
 
 				<main className="flex-1 overflow-hidden">
-					{currentPairs.length > 0 ? (
+					{currentExams.length > 0 ? (
 						<ResizablePanelGroup direction="horizontal">
 							<ResizablePanel defaultSize={100} minSize={40}>
-								<DicomViewer />
+								<Viewer />
 							</ResizablePanel>
 
 							<ResizableHandle withHandle />
@@ -58,7 +58,7 @@ const App: React.FC = () => {
 						</ResizablePanelGroup>
 					) : (
 						<div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-							No DICOM files loaded. Please upload at least one OCT volume scan (fundus optional).
+							No images loaded. Please upload DICOM or image files.
 						</div>
 					)}
 				</main>

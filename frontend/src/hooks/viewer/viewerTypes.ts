@@ -1,20 +1,30 @@
 import type { ModelInfo, ModelMap } from "@/api/model";
-import type { SlicePrediction, VolumePrediction } from "@/api/prediction";
-import type { FundusData, VolumeData } from "@/lib/dicom";
+import type { Prediction, PredictionResult } from "@/api/prediction";
+import type { BscanData, DicomLaterality, FundusData, VolumeData } from "@/lib/dicom";
+import type { FileData, RasterData } from "@/lib/images";
 import type { ModelColors } from "@/lib/modelColors";
 import type { PostprocConfig } from "@/lib/postprocess";
 import type { Dispatch, SetStateAction } from "react";
 
-export type DicomPair = { volume: VolumeData; fundus?: FundusData };
-export type Laterality = "L" | "R";
-export type DicomPairsByLaterality = Record<string, { L: DicomPair[]; R: DicomPair[] }>;
+export type Laterality = DicomLaterality | "U";
+export type ViewMode = "fundus" | "oct" | "both";
 
-export type ViewMode = "fundus" | "slice" | "both";
+export type ImageExam = {
+	examId: string;
+	examDate?: Date;
+	fundus: FundusData[];
+	bscans: BscanData[];
+	volumes: VolumeData[];
+	rasters: RasterData[];
+};
+
+export type ImageExamsByLat = Record<string, Record<Laterality, ImageExam[]>>;
+export type PredictionMap = Map<string, Map<string, PredictionResult>>;
 
 export type ViewerState = {
-	// Pairs
-	dicomPairs: DicomPairsByLaterality;
-	loadDicomPairs: (files: FileList) => Promise<void>;
+	// Images
+	imageExams: ImageExamsByLat;
+	loadImages: (files: FileList) => Promise<void>;
 
 	// Patients
 	patientInfo: Map<string, string>;
@@ -25,13 +35,20 @@ export type ViewerState = {
 	selectedLaterality: Laterality;
 	setSelectedLaterality: (lat: Laterality) => void;
 
-	// Pairs
-	currentPairs: DicomPair[];
-	selectedPair: number;
-	setSelectedPair: (index: number) => void;
+	// Exams
+	currentExams: ImageExam[];
+	selectedExamIndex: number;
+	setSelectedExamIndex: (index: number) => void;
+	selectedExam?: ImageExam;
 
-	selectedVolume?: VolumeData;
+	// Selected images
+	selectedEyeImages: FileData[];
+	setSelectedImages: (images: FileData[]) => void;
+
 	selectedFundus?: FundusData;
+	selectedVolume?: VolumeData;
+	selectedOct?: VolumeData | BscanData;
+	selectedRaster?: RasterData;
 
 	// Slices
 	selectedSlice: number;
@@ -56,19 +73,20 @@ export type ViewerState = {
 	setHiddenClasses: Dispatch<SetStateAction<Set<number>>>;
 
 	// Predictions (raw)
-	predictions: Map<string, Map<string, VolumePrediction>>;
+	predictions: PredictionMap;
 	loadingPredictions: Map<string, Set<string>>;
 
 	// Predictions (processed)
-	processedPredictions: Map<string, Map<string, VolumePrediction>>;
-	processedVolumePrediction?: VolumePrediction;
-	processedSlicePrediction?: SlicePrediction;
+	processedPredictions: PredictionMap;
+	processedFundusPrediction?: Prediction;
+	processedVolumePrediction?: PredictionResult;
+	processedOctPrediction?: Prediction;
+	processedRasterPrediction?: Prediction;
 
 	// Prediction controller
 	showPredictions: boolean;
 	setShowPredictions: (value: boolean) => void;
-	predictCurrent: () => Promise<boolean>;
-	predictAll: () => Promise<boolean[]>;
+	predictImages: (images: FileData[]) => Promise<boolean[]>;
 
 	// Stats
 	showStats: boolean;
