@@ -4,6 +4,7 @@ import { useGlobalLoader } from "@/context/GlobalLoaderProvider";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import type { FileData } from "@/lib/images";
 import { ModelColors } from "@/lib/modelColors";
+import { isModelCompatible } from "@/lib/modelCompatibility";
 import { createPostprocConfig, postprocessPredictionResult, type PostprocConfig } from "@/lib/postprocess";
 import { showError } from "@/lib/toast";
 import { useCallback, useEffect, useMemo, useState, type SetStateAction } from "react";
@@ -251,11 +252,19 @@ export function useViewerState(): ViewerState {
 
 	const selectedModelPredictions = selectedModel ? processedPredictions.get(selectedModel) : undefined;
 
+	const currentPredictionImage = [selectedFundus, selectedOct, selectedRaster].find(
+		(image) => image && selectedModelInfo && isModelCompatible(selectedModelInfo, image),
+	);
+
+	const processedCurrentResult = currentPredictionImage
+		? selectedModelPredictions?.get(currentPredictionImage.id)
+		: undefined;
+
 	const processedFundusPrediction = getDisplayedPrediction(
 		selectedFundus ? selectedModelPredictions?.get(selectedFundus.id) : undefined,
 	);
 
-	const processedVolumePrediction = selectedVolume ? selectedModelPredictions?.get(selectedVolume.id) : undefined;
+	const processedVolumeResult = selectedVolume ? selectedModelPredictions?.get(selectedVolume.id) : undefined;
 
 	const processedOctPrediction = getDisplayedPrediction(
 		selectedOct ? selectedModelPredictions?.get(selectedOct.id) : undefined,
@@ -421,8 +430,9 @@ export function useViewerState(): ViewerState {
 
 		// Predictions (processed)
 		processedPredictions,
+		processedCurrentResult,
 		processedFundusPrediction,
-		processedVolumePrediction,
+		processedVolumeResult,
 		processedOctPrediction,
 		processedRasterPrediction,
 

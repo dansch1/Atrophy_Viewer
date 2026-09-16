@@ -15,7 +15,7 @@ const FundusViewer: React.FC = () => {
 		setViewMode,
 		showSlices,
 		selectedModelInfo,
-		processedVolumePrediction,
+		processedVolumeResult,
 		showPredictions,
 		showFilenames,
 	} = useViewer();
@@ -32,8 +32,8 @@ const FundusViewer: React.FC = () => {
 		return null;
 	}
 
-	const renderVolumePrediction = () => {
-		if (!showPredictions || !processedVolumePrediction || !selectedModelInfo) {
+	const renderVolumeResult = () => {
+		if (!showPredictions || !processedVolumeResult || !selectedModelInfo) {
 			return null;
 		}
 
@@ -50,7 +50,7 @@ const FundusViewer: React.FC = () => {
 			<div className="relative">
 				<canvas ref={imgCanvasRef} />
 
-				{renderVolumePrediction()}
+				{renderVolumeResult()}
 
 				{selectedVolume && showSlices && (
 					<svg className="absolute top-0 left-0 w-full h-full">

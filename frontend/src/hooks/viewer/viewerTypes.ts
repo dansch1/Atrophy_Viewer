@@ -78,8 +78,9 @@ export type ViewerState = {
 
 	// Predictions (processed)
 	processedPredictions: PredictionMap;
+	processedCurrentResult?: PredictionResult;
 	processedFundusPrediction?: Prediction;
-	processedVolumePrediction?: PredictionResult;
+	processedVolumeResult?: PredictionResult;
 	processedOctPrediction?: Prediction;
 	processedRasterPrediction?: Prediction;
 

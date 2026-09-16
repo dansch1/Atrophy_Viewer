@@ -5,9 +5,9 @@ import { dot, lerp, mid, type Pt, unitNormal } from "@/lib/vec2";
 import React from "react";
 
 const DetectionVolumeFundusOverlay: React.FC = () => {
-	const { selectedVolume, hiddenClasses, processedVolumePrediction, showScores, selectedModelColors } = useViewer();
+	const { selectedVolume, hiddenClasses, processedVolumeResult, showScores, selectedModelColors } = useViewer();
 
-	if (!selectedVolume || !processedVolumePrediction || processedVolumePrediction.scope !== "slice") {
+	if (!selectedVolume || !processedVolumeResult || processedVolumeResult.scope !== "slice") {
 		return null;
 	}
 
@@ -55,7 +55,7 @@ const DetectionVolumeFundusOverlay: React.FC = () => {
 	return (
 		<svg className="absolute top-0 left-0 w-full h-full">
 			<g>
-				{processedVolumePrediction.items.flatMap((prediction, sliceIndex) => {
+				{processedVolumeResult.items.flatMap((prediction, sliceIndex) => {
 					if (prediction?.kind !== "object_detection") {
 						return [];
 					}

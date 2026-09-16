@@ -10,7 +10,7 @@ const SliceClassScores: React.FC = () => {
 		setSelectedSlice,
 		selectedModelClasses,
 		hiddenClasses,
-		processedVolumePrediction,
+		processedVolumeResult,
 		selectedModelColors,
 	} = useViewer();
 
@@ -19,11 +19,11 @@ const SliceClassScores: React.FC = () => {
 			return null;
 		}
 
-		if (!processedVolumePrediction || processedVolumePrediction.scope !== "slice") {
+		if (!processedVolumeResult || processedVolumeResult.scope !== "slice") {
 			return Array.from({ length: selectedVolume.frames }, (_, sliceIndex) => ({ slice: sliceIndex + 1 }));
 		}
 
-		return processedVolumePrediction.items.map((prediction, sliceIndex) => {
+		return processedVolumeResult.items.map((prediction, sliceIndex) => {
 			const row: Record<string, number> = { slice: sliceIndex + 1 };
 
 			if (prediction?.kind !== "classification") {
@@ -36,7 +36,7 @@ const SliceClassScores: React.FC = () => {
 
 			return row;
 		});
-	}, [selectedVolume, selectedModelClasses, processedVolumePrediction]);
+	}, [selectedVolume, selectedModelClasses, processedVolumeResult]);
 
 	if (!data || !selectedModelClasses) {
 		return null;

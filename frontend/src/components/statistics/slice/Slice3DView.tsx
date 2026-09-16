@@ -9,18 +9,18 @@ import React, { useMemo } from "react";
 import * as THREE from "three";
 
 const VolumeLesion3DView: React.FC = () => {
-	const { selectedVolume, hiddenClasses, processedVolumePrediction, selectedModelColors } = useViewer();
+	const { selectedVolume, hiddenClasses, processedVolumeResult, selectedModelColors } = useViewer();
 
 	const data = useMemo(() => {
 		if (!selectedVolume) {
 			return null;
 		}
 
-		if (!processedVolumePrediction || processedVolumePrediction.scope !== "slice") {
+		if (!processedVolumeResult || processedVolumeResult.scope !== "slice") {
 			return [];
 		}
 
-		return processedVolumePrediction.items.map((prediction, sliceIndex) => {
+		return processedVolumeResult.items.map((prediction, sliceIndex) => {
 			const z = computeSliceZ(selectedVolume.slicePositions, sliceIndex);
 			if (prediction?.kind !== "object_detection") {
 				return {
@@ -38,7 +38,7 @@ const VolumeLesion3DView: React.FC = () => {
 				})),
 			};
 		});
-	}, [selectedVolume, processedVolumePrediction]);
+	}, [selectedVolume, processedVolumeResult]);
 
 	function computeSliceZ(slicePositions: SlicePosition[], sliceIndex: number): number {
 		const first = mid(slicePositions[0].p0, slicePositions[0].p1);

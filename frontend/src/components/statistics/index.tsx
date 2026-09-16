@@ -2,13 +2,17 @@ import { useViewer } from "@/context/ViewerStateProvider";
 import SliceStatistics from "./slice/SliceStatistics";
 
 const Statistics: React.FC = () => {
-	const { selectedModelInfo } = useViewer();
+	const { processedCurrentResult } = useViewer();
 
-	if (!selectedModelInfo) {
-		return null;
+	if (!processedCurrentResult) {
+		return (
+			<div className="h-full flex items-center justify-center p-2">
+				<p className="text-sm text-muted-foreground">No predictions available yet.</p>
+			</div>
+		);
 	}
 
-	switch (selectedModelInfo.input.prediction_scope) {
+	switch (processedCurrentResult.scope) {
 		case "slice":
 			return <SliceStatistics />;
 		default:

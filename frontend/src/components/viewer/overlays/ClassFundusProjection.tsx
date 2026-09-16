@@ -4,16 +4,16 @@ import { unitNormal } from "@/lib/vec2";
 import React from "react";
 
 const ClassVolumeFundusOverlay: React.FC = () => {
-	const { selectedVolume, hiddenClasses, processedVolumePrediction, selectedPostprocConfig, selectedModelColors } =
+	const { selectedVolume, hiddenClasses, processedVolumeResult, selectedPostprocConfig, selectedModelColors } =
 		useViewer();
 
-	if (!selectedVolume || !processedVolumePrediction || processedVolumePrediction.scope !== "slice") {
+	if (!selectedVolume || !processedVolumeResult || processedVolumeResult.scope !== "slice") {
 		return null;
 	}
 
 	return (
 		<svg className="absolute top-0 left-0 w-full h-full">
-			{processedVolumePrediction.items.flatMap((prediction, sliceIndex) => {
+			{processedVolumeResult.items.flatMap((prediction, sliceIndex) => {
 				if (prediction?.kind !== "classification") {
 					return [];
 				}

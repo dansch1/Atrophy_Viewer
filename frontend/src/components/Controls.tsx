@@ -17,18 +17,18 @@ import type { FileData } from "@/lib/images";
 import { getCompatibleImages, isModelCompatible } from "@/lib/modelCompatibility";
 import {
 	BarChart3,
-	BrainCircuit,
 	ChevronLeft,
 	ChevronRight,
 	Eye,
 	EyeOff,
-	Image,
+	GapHorizontal,
 	Images,
-	List,
+	Menu,
 	Pause,
 	Play,
-	Square,
-	SquareSplitVertical,
+	ScanLine,
+	ScanSearch,
+	ScanSquare,
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import ImageSelectionDialog, { ImageTypeIcon } from "./ImageSelectionDialog";
@@ -207,38 +207,35 @@ const Controls: React.FC = () => {
 				</div>
 
 				<div className="justify-self-end flex gap-2">
-					{canSwitchView && (
-						<Tooltip delayDuration={1000}>
-							<TooltipTrigger asChild>
-								<Button
-									variant="outline"
-									size="icon"
-									onClick={() =>
-										setViewMode(
-											viewMode === "oct" ? "fundus" : viewMode === "fundus" ? "both" : "oct",
-										)
-									}
-								>
-									{viewMode === "fundus" ? (
-										<Image className="w-4 h-4" />
-									) : viewMode === "oct" ? (
-										<Square className="w-4 h-4" />
-									) : (
-										<SquareSplitVertical className="w-4 h-4 transform rotate-90" />
-									)}
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent>
-								<p>
-									{viewMode === "fundus"
-										? "Mode: Fundus"
-										: viewMode === "oct"
-											? "Mode: OCT"
-											: "Mode: Fundus & OCT"}
-								</p>
-							</TooltipContent>
-						</Tooltip>
-					)}
+					<Tooltip delayDuration={1000}>
+						<TooltipTrigger asChild>
+							<Button
+								variant="outline"
+								size="icon"
+								disabled={!canSwitchView}
+								onClick={() =>
+									setViewMode(viewMode === "oct" ? "fundus" : viewMode === "fundus" ? "both" : "oct")
+								}
+							>
+								{viewMode === "fundus" ? (
+									<ScanSquare className="w-4 h-4" />
+								) : viewMode === "oct" ? (
+									<ScanLine className="w-4 h-4" />
+								) : (
+									<GapHorizontal className="w-4 h-4" />
+								)}
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent>
+							<p>
+								{viewMode === "fundus"
+									? "Mode: Fundus"
+									: viewMode === "oct"
+										? "Mode: OCT"
+										: "Mode: Fundus & OCT"}
+							</p>
+						</TooltipContent>
+					</Tooltip>
 
 					<Tooltip delayDuration={1000}>
 						<TooltipTrigger asChild>
@@ -248,7 +245,7 @@ const Controls: React.FC = () => {
 								onClick={() => setShowSlices(!showSlices)}
 								disabled={!selectedFundus || !selectedVolume || viewMode === "oct"}
 							>
-								<List className="w-4 h-4" />
+								<Menu className="w-4 h-4" />
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent>
@@ -307,7 +304,7 @@ const Controls: React.FC = () => {
 										size="icon"
 										disabled={!selectedModel || (!canPredictCurrent && !canPredictAll)}
 									>
-										<BrainCircuit className="w-4 h-4" />
+										<ScanSearch className="w-4 h-4" />
 									</Button>
 								</TooltipTrigger>
 							</DropdownMenuTrigger>
@@ -327,7 +324,7 @@ const Controls: React.FC = () => {
 									disabled={!canPredictAll}
 									onClick={() => void runPredictions(imagesToPredict)}
 								>
-									Predict all exams
+									Predict all
 								</DropdownMenuItem>
 							</DropdownMenuContent>
 						</DropdownMenu>

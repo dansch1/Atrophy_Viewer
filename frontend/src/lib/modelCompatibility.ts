@@ -6,7 +6,16 @@ export function isModelCompatible(model: ModelInfo, image: FileData): boolean {
 		return model.input.image_type !== "oct_volume";
 	}
 
-	return model.input.image_type === image.type;
+	switch (model.input.image_type) {
+		case "fundus":
+			return image.type === "fundus";
+
+		case "oct_bscan":
+			return image.type === "oct_bscan" || image.type === "oct_volume";
+
+		case "oct_volume":
+			return image.type === "oct_volume";
+	}
 }
 
 export function getCompatibleImages(model: ModelInfo, images: FileData[]): FileData[] {
