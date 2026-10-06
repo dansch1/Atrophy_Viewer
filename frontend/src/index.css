@@ -113,6 +113,7 @@
 @layer base {
 	* {
 		@apply border-border outline-ring/50;
+		scrollbar-color: var(--muted-foreground) transparent;
 	}
 	body {
 		@apply bg-background text-foreground;

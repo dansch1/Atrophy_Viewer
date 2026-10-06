@@ -22,7 +22,7 @@ const ModelInputSchema = z.discriminatedUnion("image_type", [
 
 const DetectionPostprocConfigSchema = z.object({
 	type: z.literal("object_detection"),
-	score_threshold: z.number(),
+	thresholds: z.array(z.number()),
 	nms_iou_threshold: z.number(),
 	top_k: z.number().int().nonnegative(),
 });

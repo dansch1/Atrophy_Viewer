@@ -1,9 +1,9 @@
 import type { ModelInfo } from "@/api/model";
-import type { Box, DetectionPrediction, PredictionResult, Prediction } from "@/api/prediction";
+import type { Box, DetectionPrediction, Prediction, PredictionResult } from "@/api/prediction";
 
 type DetectionPostprocConfig = {
 	type: "object_detection";
-	scoreThreshold: number;
+	thresholds: number[];
 	nmsIouThreshold: number;
 	topK: number;
 };
@@ -24,7 +24,7 @@ export function createPostprocConfig(model: ModelInfo): PostprocConfig | undefin
 		case "object_detection":
 			return {
 				type: "object_detection",
-				scoreThreshold: model.postproc_config.score_threshold,
+				thresholds: [...model.postproc_config.thresholds],
 				nmsIouThreshold: model.postproc_config.nms_iou_threshold,
 				topK: model.postproc_config.top_k,
 			};
@@ -59,7 +59,7 @@ function postprocessPrediction(prediction: Prediction | null, config?: PostprocC
 function postprocessDetection(prediction: DetectionPrediction, config: DetectionPostprocConfig): DetectionPrediction {
 	const candidates = prediction.scores
 		.map((score, index) => ({ score, index }))
-		.filter(({ score }) => score >= config.scoreThreshold)
+		.filter(({ score, index }) => passesClassThreshold(score, prediction.classes[index], config))
 		.sort((a, b) => b.score - a.score)
 		.map(({ index }) => index);
 
@@ -109,7 +109,7 @@ export function area(box: Box): number {
 	return Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
 }
 
-export function isClassPositive(score: number, classIndex: number, config?: PostprocConfig): boolean {
-	const threshold = (config?.type === "classification" ? config.thresholds[classIndex] : undefined) ?? 0.5;
+export function passesClassThreshold(score: number, classIndex: number, config?: PostprocConfig): boolean {
+	const threshold = config?.thresholds[classIndex] ?? 0.5;
 	return score >= threshold;
 }

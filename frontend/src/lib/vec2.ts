@@ -11,6 +11,10 @@ export function mid(a: Pt, b: Pt): Pt {
 	return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
+export function distance(a: Pt, b: Pt) {
+	return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
 export function dot(ax: number, ay: number, bx: number, by: number) {
 	return ax * bx + ay * by;
 }

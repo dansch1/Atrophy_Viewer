@@ -8,7 +8,7 @@ import { Canvas } from "@react-three/fiber";
 import React, { useMemo } from "react";
 import * as THREE from "three";
 
-const VolumeLesion3DView: React.FC = () => {
+const Slice3DView: React.FC = () => {
 	const { selectedVolume, hiddenClasses, processedVolumeResult, selectedModelColors } = useViewer();
 
 	const data = useMemo(() => {
@@ -150,4 +150,4 @@ const VolumeLesion3DView: React.FC = () => {
 	);
 };
 
-export default VolumeLesion3DView;
+export default Slice3DView;

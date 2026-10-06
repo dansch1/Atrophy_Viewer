@@ -1,5 +1,5 @@
 import { useViewer } from "@/context/ViewerStateProvider";
-import { isClassPositive } from "@/lib/postprocess";
+import { passesClassThreshold } from "@/lib/postprocess";
 import { unitNormal } from "@/lib/vec2";
 import React from "react";
 
@@ -27,7 +27,7 @@ const ClassVolumeFundusOverlay: React.FC = () => {
 					.map((score, cls) => ({ cls, score }))
 					.filter(
 						({ cls, score }) =>
-							!hiddenClasses.has(cls) && isClassPositive(score, cls, selectedPostprocConfig),
+							!hiddenClasses.has(cls) && passesClassThreshold(score, cls, selectedPostprocConfig),
 					);
 
 				if (positiveClasses.length === 0) {

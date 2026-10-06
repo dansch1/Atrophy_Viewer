@@ -1,6 +1,6 @@
 import type { ClassPrediction } from "@/api/prediction";
 import { useViewer } from "@/context/ViewerStateProvider";
-import { isClassPositive } from "@/lib/postprocess";
+import { passesClassThreshold } from "@/lib/postprocess";
 import React from "react";
 
 const ClassImageOverlay: React.FC<{ prediction: ClassPrediction }> = ({ prediction }) => {
@@ -22,7 +22,7 @@ const ClassImageOverlay: React.FC<{ prediction: ClassPrediction }> = ({ predicti
 
 				const color = selectedModelColors.getColorByIndex(cls);
 				const score = prediction.scores[cls] ?? 0;
-				const positive = isClassPositive(score, cls, selectedPostprocConfig);
+				const positive = passesClassThreshold(score, cls, selectedPostprocConfig);
 
 				return (
 					<div key={className} className="flex items-center justify-between gap-4 text-sm">

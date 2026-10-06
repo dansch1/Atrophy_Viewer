@@ -35,14 +35,9 @@ export function SettingsDialog() {
 
 	const [isOpen, setIsOpen] = useState(false);
 	const { isDark, setIsDark } = useDarkMode();
-	const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>({});
 
-	const toggleModel = (modelId: string) => {
-		setExpandedModels((prev) => ({
-			...prev,
-			[modelId]: !prev[modelId],
-		}));
-	};
+	const [scoreThresholdsExpanded, setScoreThresholdsExpanded] = useState(false);
+	const [modelColorsExpanded, setModelColorsExpanded] = useState<Record<string, boolean>>({});
 
 	const handleColorChange = useMemo(
 		() =>
@@ -79,23 +74,7 @@ export function SettingsDialog() {
 
 	const renderDetectionPostproc = (config: Extract<PostprocConfig, { type: "object_detection" }>) => (
 		<>
-			<span className="text-muted-foreground">Score threshold</span>
-			<span className="text-foreground/80">
-				{config.scoreThreshold.toFixed(2)}
-				<Slider
-					className="[&_[data-slot=slider-track]]:bg-input/80"
-					value={[config.scoreThreshold]}
-					min={0}
-					max={1}
-					step={0.01}
-					onValueChange={([value]) =>
-						setSelectedPostprocConfig({
-							...config,
-							scoreThreshold: value,
-						})
-					}
-				/>
-			</span>
+			{renderThresholds(config)}
 
 			<span className="text-muted-foreground">NMS IoU</span>
 			<span className="text-foreground/80">
@@ -135,31 +114,43 @@ export function SettingsDialog() {
 		</>
 	);
 
-	const renderClassPostproc = (config: Extract<PostprocConfig, { type: "classification" }>) => (
+	const renderClassPostproc = (config: Extract<PostprocConfig, { type: "classification" }>) =>
+		renderThresholds(config);
+
+	const renderThresholds = (config: PostprocConfig) => (
 		<>
-			{selectedModelClasses?.map((className, cls) => (
-				<React.Fragment key={`threshold-${className}`}>
-					<span className="text-muted-foreground">{className} threshold</span>
-					<span className="text-foreground/80">
-						{(config.thresholds[cls] ?? 0.5).toFixed(2)}
-						<Slider
-							className="[&_[data-slot=slider-track]]:bg-input/80"
-							value={[config.thresholds[cls] ?? 0.5]}
-							min={0}
-							max={1}
-							step={0.01}
-							onValueChange={([value]) => {
-								const thresholds = [...config.thresholds];
-								thresholds[cls] = value;
-								setSelectedPostprocConfig({
-									...config,
-									thresholds,
-								});
-							}}
-						/>
-					</span>
-				</React.Fragment>
-			))}
+			<button
+				onClick={() => setScoreThresholdsExpanded((prev) => !prev)}
+				className="col-span-2 w-full flex items-center justify-between text-muted-foreground hover:text-foreground transition cursor-pointer"
+			>
+				<span className="font-medium text-left">Thresholds</span>
+				{scoreThresholdsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+			</button>
+
+			{scoreThresholdsExpanded &&
+				selectedModelClasses?.map((className, cls) => (
+					<React.Fragment key={`threshold-${className}`}>
+						<span className="text-muted-foreground ml-4">{className}</span>
+						<span className="text-foreground/80">
+							{(config.thresholds[cls] ?? 0.5).toFixed(2)}
+							<Slider
+								className="[&_[data-slot=slider-track]]:bg-input/80"
+								value={[config.thresholds[cls] ?? 0.5]}
+								min={0}
+								max={1}
+								step={0.01}
+								onValueChange={([value]) => {
+									const thresholds = [...config.thresholds];
+									thresholds[cls] = value;
+									setSelectedPostprocConfig({
+										...config,
+										thresholds,
+									});
+								}}
+							/>
+						</span>
+					</React.Fragment>
+				))}
 		</>
 	);
 
@@ -212,18 +203,23 @@ export function SettingsDialog() {
 					{[...models].map(([modelId, modelInfo]) => (
 						<React.Fragment key={modelId}>
 							<button
-								onClick={() => toggleModel(modelId)}
+								onClick={() => {
+									setModelColorsExpanded((prev) => ({
+										...prev,
+										[modelId]: !prev[modelId],
+									}));
+								}}
 								className="col-span-2 w-full flex items-center justify-between text-muted-foreground hover:text-foreground transition cursor-pointer"
 							>
 								<span className="font-medium text-left">{modelInfo.name}</span>
-								{expandedModels[modelId] ? (
+								{modelColorsExpanded[modelId] ? (
 									<ChevronDown className="w-4 h-4" />
 								) : (
 									<ChevronRight className="w-4 h-4" />
 								)}
 							</button>
 
-							{expandedModels[modelId] &&
+							{modelColorsExpanded[modelId] &&
 								modelInfo.classes.map((className) => (
 									<React.Fragment key={`${modelId}-${className}`}>
 										<span className="text-muted-foreground ml-4">{className}</span>
